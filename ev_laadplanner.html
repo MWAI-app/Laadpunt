@@ -1,0 +1,1249 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>EV Laadplanner</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root {
+    --groen: #22c55e;
+    --oranje: #f97316;
+    --rood: #ef4444;
+    --blauw: #3b82f6;
+    --donker: #0f172a;
+    --donker2: #1e293b;
+    --donker3: #334155;
+    --tekst: #f1f5f9;
+    --subtekst: #94a3b8;
+    --accent: #38bdf8;
+    --kaart-bg: #1e293b;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; font-family: 'Segoe UI', system-ui, sans-serif; background: var(--donker); color: var(--tekst); overflow: hidden; }
+
+  /* ── SCHERMEN ── */
+  .scherm { position: absolute; inset: 0; display: flex; flex-direction: column; transition: transform .35s cubic-bezier(.4,0,.2,1), opacity .35s; }
+  .scherm.verborgen { transform: translateX(100%); opacity: 0; pointer-events: none; }
+
+  /* ── HEADER ── */
+  .header {
+    background: linear-gradient(135deg, #0f2027, #203a43, #2c5364);
+    padding: 14px 16px 10px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid rgba(255,255,255,.08);
+    flex-shrink: 0;
+  }
+  .header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.3px; }
+  .header span { font-size: 22px; }
+  .header-sub { font-size: 11px; color: var(--subtekst); margin-top: 1px; }
+  .header-back { background: rgba(255,255,255,.1); border: none; color: var(--tekst); font-size: 20px; width: 36px; height: 36px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  /* ── INSTELLINGEN SCHERM ── */
+  #s-instellen { background: var(--donker); }
+  .instellen-body { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+
+  .kaart-section {
+    background: var(--donker2);
+    border-radius: 14px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,.07);
+  }
+  .kaart-section-label {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .8px;
+    color: var(--subtekst); padding: 10px 14px 6px;
+  }
+
+  /* ── BESTEMMING INVOER ── */
+  .doel-row {
+    padding: 0 14px 14px;
+    display: flex; gap: 8px;
+  }
+  .doel-input {
+    flex: 1;
+    background: var(--donker3);
+    border: 1.5px solid rgba(255,255,255,.12);
+    border-radius: 10px;
+    color: var(--tekst);
+    font-size: 15px;
+    padding: 11px 14px;
+    outline: none;
+    transition: border-color .2s;
+  }
+  .doel-input:focus { border-color: var(--accent); }
+  .doel-input::placeholder { color: var(--subtekst); }
+  .doel-zoek-btn {
+    background: var(--accent);
+    border: none; color: #0f172a;
+    font-size: 18px; font-weight: 700;
+    width: 46px; height: 46px;
+    border-radius: 10px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .doel-resultaten {
+    margin: 0 14px 10px;
+    background: var(--donker3);
+    border-radius: 10px;
+    overflow: hidden;
+    display: none;
+  }
+  .doel-resultaten.zichtbaar { display: block; }
+  .doel-item {
+    padding: 10px 14px;
+    cursor: pointer;
+    border-bottom: 1px solid rgba(255,255,255,.06);
+    font-size: 13px;
+    line-height: 1.4;
+  }
+  .doel-item:last-child { border-bottom: none; }
+  .doel-item:hover, .doel-item:active { background: rgba(56,189,248,.12); }
+  .doel-item strong { display: block; font-size: 14px; }
+  .doel-item span { color: var(--subtekst); font-size: 12px; }
+
+  /* ── SLIDERS ── */
+  .slider-card {
+    background: var(--donker2);
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,.07);
+  }
+  .slider-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+  .slider-label { font-size: 13px; font-weight: 600; }
+  .slider-waarde { font-size: 22px; font-weight: 800; color: var(--accent); }
+  .slider-waarde small { font-size: 13px; font-weight: 400; color: var(--subtekst); }
+  input[type=range] {
+    -webkit-appearance: none; width: 100%; height: 6px;
+    border-radius: 3px; background: var(--donker3); outline: none;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 24px; height: 24px;
+    border-radius: 50%; background: var(--accent);
+    border: 3px solid var(--donker); cursor: pointer;
+    box-shadow: 0 0 0 2px rgba(56,189,248,.3);
+  }
+  .slider-hint { font-size: 11px; color: var(--subtekst); margin-top: 6px; }
+
+  /* ── VERMOGEN TOGGLE ── */
+  .vermogen-card {
+    background: var(--donker2);
+    border-radius: 14px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,.07);
+  }
+  .vermogen-label { font-size: 13px; font-weight: 600; margin-bottom: 10px; }
+  .vermogen-knoppen { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vermogen-knop {
+    background: var(--donker3);
+    border: 2px solid rgba(255,255,255,.1);
+    border-radius: 10px;
+    color: var(--tekst);
+    font-size: 14px; font-weight: 700;
+    padding: 12px 8px;
+    cursor: pointer;
+    text-align: center;
+    transition: all .15s;
+  }
+  .vermogen-knop.actief { background: rgba(56,189,248,.15); border-color: var(--accent); color: var(--accent); }
+  .vermogen-knop small { display: block; font-size: 11px; font-weight: 400; color: var(--subtekst); margin-top: 2px; }
+  .vermogen-knop.actief small { color: rgba(56,189,248,.7); }
+
+  /* ── START KNOP ── */
+  .start-btn {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border: none; color: #fff;
+    font-size: 17px; font-weight: 800;
+    padding: 16px;
+    border-radius: 14px;
+    cursor: pointer;
+    width: 100%;
+    letter-spacing: .3px;
+    box-shadow: 0 4px 20px rgba(34,197,94,.3);
+    transition: transform .1s, box-shadow .1s;
+  }
+  .start-btn:active { transform: scale(.98); box-shadow: 0 2px 10px rgba(34,197,94,.2); }
+  .start-btn:disabled { background: var(--donker3); color: var(--subtekst); box-shadow: none; cursor: not-allowed; }
+  .doel-badge {
+    background: rgba(34,197,94,.12);
+    border: 1px solid rgba(34,197,94,.3);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    display: none;
+    gap: 8px;
+    align-items: center;
+  }
+  .doel-badge.zichtbaar { display: flex; }
+  .doel-badge-tekst { flex: 1; }
+  .doel-badge-tekst strong { display: block; color: var(--groen); font-size: 14px; }
+  .doel-badge-tekst span { color: var(--subtekst); font-size: 12px; }
+  .doel-wis { background: none; border: none; color: var(--subtekst); font-size: 18px; cursor: pointer; padding: 0 4px; }
+
+  /* ── RIJDEN SCHERM ── */
+  #s-rijden { background: var(--donker); }
+  #kaart { flex: 1; background: #1a2332; }
+
+  /* ── RIJDEN HUD ── */
+  .hud {
+    position: absolute;
+    top: 70px; left: 0; right: 0;
+    z-index: 1000;
+    pointer-events: none;
+    padding: 0 12px;
+    display: flex; gap: 8px;
+  }
+  .hud-kaart {
+    background: rgba(15,23,42,.88);
+    backdrop-filter: blur(8px);
+    border-radius: 12px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,.08);
+    flex: 1;
+  }
+  .hud-rij { display: flex; justify-content: space-between; align-items: center; }
+  .hud-item { text-align: center; }
+  .hud-item .val { font-size: 20px; font-weight: 800; }
+  .hud-item .lbl { font-size: 10px; color: var(--subtekst); text-transform: uppercase; letter-spacing: .5px; }
+  .hud-item.groen .val { color: var(--groen); }
+  .hud-item.oranje .val { color: var(--oranje); }
+  .hud-item.rood .val { color: var(--rood); }
+  .hud-divider { width: 1px; background: rgba(255,255,255,.1); margin: 4px 0; }
+
+  /* ── STATUS BALK ── */
+  .status-balk {
+    position: absolute;
+    top: 134px; left: 12px; right: 12px;
+    z-index: 1000;
+    pointer-events: none;
+  }
+  .status-pill {
+    background: rgba(15,23,42,.9);
+    backdrop-filter: blur(8px);
+    border-radius: 20px;
+    padding: 6px 14px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid rgba(255,255,255,.08);
+  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.groen { background: var(--groen); box-shadow: 0 0 6px var(--groen); }
+  .status-dot.oranje { background: var(--oranje); box-shadow: 0 0 6px var(--oranje); }
+  .status-dot.rood { background: var(--rood); box-shadow: 0 0 6px var(--rood); animation: puls 1s infinite; }
+  @keyframes puls { 0%,100%{ opacity:1; } 50%{ opacity:.4; } }
+
+  /* ── ONDERSTE BALK ── */
+  .onderste-balk {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 1000;
+    padding: 12px 12px 20px;
+    background: linear-gradient(to top, rgba(15,23,42,.98) 60%, transparent);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .laders-preview {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .laders-preview::-webkit-scrollbar { display: none; }
+
+  .lader-chip {
+    background: var(--donker2);
+    border: 1.5px solid rgba(255,255,255,.1);
+    border-radius: 10px;
+    padding: 8px 12px;
+    cursor: pointer;
+    flex-shrink: 0;
+    min-width: 140px;
+    transition: border-color .15s;
+    pointer-events: all;
+  }
+  .lader-chip:active { border-color: var(--accent); }
+  .lader-chip-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .lader-chip-naam { font-size: 13px; font-weight: 700; }
+  .lader-chip-kw { font-size: 12px; font-weight: 800; color: var(--groen); background: rgba(34,197,94,.12); padding: 1px 6px; border-radius: 5px; }
+  .lader-chip-kw.oranje { color: var(--oranje); background: rgba(249,115,22,.12); }
+  .lader-chip-info { font-size: 11px; color: var(--subtekst); }
+  .lader-chip-faciliteiten { font-size: 11px; margin-top: 3px; }
+
+  .acties-rij { display: flex; gap: 8px; pointer-events: all; }
+  .paniek-knop {
+    background: linear-gradient(135deg, #ef4444, #b91c1c);
+    border: none; color: #fff;
+    font-size: 15px; font-weight: 800;
+    height: 52px;
+    border-radius: 12px;
+    cursor: pointer;
+    flex: 1;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    box-shadow: 0 4px 20px rgba(239,68,68,.35);
+    letter-spacing: .2px;
+    transition: transform .1s;
+  }
+  .paniek-knop:active { transform: scale(.97); }
+  .zoek-knop {
+    background: linear-gradient(135deg, #3b82f6, #1d4ed8);
+    border: none; color: #fff;
+    font-size: 15px; font-weight: 700;
+    height: 52px; width: 52px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    box-shadow: 0 4px 16px rgba(59,130,246,.3);
+    transition: transform .1s;
+  }
+  .zoek-knop:active { transform: scale(.97); }
+  .instellingen-knop {
+    background: var(--donker2);
+    border: 1.5px solid rgba(255,255,255,.1);
+    color: var(--tekst);
+    font-size: 20px;
+    height: 52px; width: 52px;
+    border-radius: 12px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .1s;
+  }
+  .instellingen-knop:active { transform: scale(.97); }
+
+  /* ── DETAIL PANEL ── */
+  #detail-panel {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 2000;
+    background: var(--donker2);
+    border-radius: 20px 20px 0 0;
+    border-top: 1px solid rgba(255,255,255,.1);
+    transform: translateY(100%);
+    transition: transform .3s cubic-bezier(.4,0,.2,1);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+  }
+  #detail-panel.open { transform: translateY(0); }
+  .panel-handle { width: 36px; height: 4px; background: rgba(255,255,255,.2); border-radius: 2px; margin: 10px auto 0; flex-shrink: 0; }
+  .panel-body { overflow-y: auto; padding: 12px 16px 32px; flex: 1; }
+  .panel-naam { font-size: 20px; font-weight: 800; margin-bottom: 4px; }
+  .panel-adres { font-size: 13px; color: var(--subtekst); margin-bottom: 12px; }
+  .panel-badges { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .badge {
+    font-size: 12px; font-weight: 700;
+    padding: 4px 10px; border-radius: 20px;
+  }
+  .badge.kw100 { background: rgba(34,197,94,.15); color: var(--groen); border: 1px solid rgba(34,197,94,.3); }
+  .badge.kw50 { background: rgba(249,115,22,.15); color: var(--oranje); border: 1px solid rgba(249,115,22,.3); }
+  .badge.punten { background: rgba(56,189,248,.15); color: var(--accent); border: 1px solid rgba(56,189,248,.3); }
+  .badge.afstand { background: rgba(148,163,184,.1); color: var(--subtekst); border: 1px solid rgba(255,255,255,.1); }
+
+  .panel-sectie { margin-bottom: 16px; }
+  .panel-sectie-titel { font-size: 11px; text-transform: uppercase; letter-spacing: .8px; color: var(--subtekst); margin-bottom: 8px; }
+  .faciliteit-rij { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 13px; }
+  .faciliteit-rij:last-child { border-bottom: none; }
+  .faciliteit-icon { font-size: 16px; width: 24px; text-align: center; }
+  .faciliteit-afstand { margin-left: auto; color: var(--subtekst); font-size: 12px; }
+
+  .voor-nadeel-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .voordelen, .nadelen {
+    background: var(--donker3);
+    border-radius: 10px;
+    padding: 10px 12px;
+  }
+  .voordelen { border-top: 3px solid var(--groen); }
+  .nadelen { border-top: 3px solid var(--rood); }
+  .vn-titel { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+  .voordelen .vn-titel { color: var(--groen); }
+  .nadelen .vn-titel { color: var(--rood); }
+  .vn-item { font-size: 12px; color: var(--subtekst); margin-bottom: 3px; line-height: 1.4; }
+
+  .panel-knoppen { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; }
+  .panel-btn {
+    border: none; border-radius: 11px;
+    font-size: 14px; font-weight: 700;
+    height: 48px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+    transition: transform .1s;
+  }
+  .panel-btn:active { transform: scale(.97); }
+  .panel-btn.navigeer { background: linear-gradient(135deg, var(--groen), #16a34a); color: #fff; }
+  .panel-btn.plugshare { background: rgba(56,189,248,.15); color: var(--accent); border: 1.5px solid rgba(56,189,248,.3); }
+  .panel-sluiten {
+    position: absolute; top: 14px; right: 16px;
+    background: rgba(255,255,255,.1); border: none;
+    color: var(--tekst); width: 30px; height: 30px;
+    border-radius: 50%; font-size: 16px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    z-index: 10;
+  }
+
+  /* ── OVERLAY ── */
+  #overlay { position: absolute; inset: 0; z-index: 1500; background: rgba(0,0,0,.5); display: none; }
+  #overlay.zichtbaar { display: block; }
+
+  /* ── LADEN INDICATOR ── */
+  .laden {
+    position: absolute; inset: 0; z-index: 3000;
+    background: rgba(15,23,42,.85);
+    display: none;
+    align-items: center; justify-content: center;
+    flex-direction: column; gap: 16px;
+  }
+  .laden.zichtbaar { display: flex; }
+  .laden-ring {
+    width: 48px; height: 48px;
+    border: 4px solid rgba(56,189,248,.2);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .laden-tekst { font-size: 14px; color: var(--subtekst); }
+
+  /* ── TOAST ── */
+  #toast {
+    position: absolute; bottom: 110px; left: 50%; transform: translateX(-50%) translateY(20px);
+    background: rgba(30,41,59,.95); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 20px; padding: 8px 16px;
+    font-size: 13px; white-space: nowrap;
+    z-index: 5000; opacity: 0;
+    transition: opacity .3s, transform .3s;
+    pointer-events: none;
+  }
+  #toast.zichtbaar { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── LEAFLET OVERRIDES ── */
+  .leaflet-container { background: #1a2332 !important; }
+  .lader-marker {
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    border: 3px solid;
+    background: var(--donker2);
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0,0,0,.5);
+    transition: transform .15s;
+  }
+  .lader-marker.kw100 { border-color: var(--groen); }
+  .lader-marker.kw50 { border-color: var(--oranje); }
+  .lader-marker.laag { border-color: rgba(255,255,255,.3); }
+
+  /* Gps pijl */
+  .gps-dot {
+    width: 16px; height: 16px;
+    background: var(--blauw);
+    border-radius: 50%;
+    border: 3px solid white;
+    box-shadow: 0 0 0 4px rgba(59,130,246,.3);
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════ INSTELLEN SCHERM -->
+<div id="s-instellen" class="scherm">
+  <div class="header">
+    <span>⚡</span>
+    <div>
+      <div class="header h1" style="font-size:18px;font-weight:700">EV Laadplanner</div>
+      <div class="header-sub">Stel je reis in</div>
+    </div>
+  </div>
+
+  <div class="instellen-body">
+
+    <!-- BESTEMMING -->
+    <div class="kaart-section">
+      <div class="kaart-section-label">🎯 Bestemming</div>
+      <div class="doel-row">
+        <input id="doel-input" class="doel-input" type="text" placeholder="Bijv. Amsterdam Centraal" autocomplete="off" inputmode="search">
+        <button class="doel-zoek-btn" onclick="zoekBestemming()">🔍</button>
+      </div>
+      <div id="doel-resultaten" class="doel-resultaten"></div>
+      <div id="doel-badge" class="doel-badge" style="margin:0 14px 14px">
+        <span style="font-size:20px">📍</span>
+        <div class="doel-badge-tekst">
+          <strong id="doel-badge-naam">—</strong>
+          <span id="doel-badge-adres">—</span>
+        </div>
+        <button class="doel-wis" onclick="wisDoel()">✕</button>
+      </div>
+    </div>
+
+    <!-- BEREIK SLIDER -->
+    <div class="slider-card">
+      <div class="slider-header">
+        <div class="slider-label">🔋 Huidig bereik</div>
+        <div class="slider-waarde"><span id="bereik-val">280</span><small> km</small></div>
+      </div>
+      <input type="range" id="bereik-slider" min="50" max="600" step="10" value="280"
+        oninput="updateSliders()">
+      <div class="slider-hint">Je rijdt nog maximaal <span id="bereik-hint">280</span> km</div>
+    </div>
+
+    <!-- LAADMOMENT SLIDER -->
+    <div class="slider-card">
+      <div class="slider-header">
+        <div class="slider-label">⚠️ Laden bij nog...</div>
+        <div class="slider-waarde"><span id="laad-val">15</span><small> %</small></div>
+      </div>
+      <input type="range" id="laad-slider" min="5" max="40" step="5" value="15"
+        oninput="updateSliders()">
+      <div class="slider-hint">Laadadvies wanneer bereik &lt; <span id="laad-hint-km">42</span> km</div>
+    </div>
+
+    <!-- ZOEKRADIUS SLIDER -->
+    <div class="slider-card">
+      <div class="slider-header">
+        <div class="slider-label">📡 Zoekradius</div>
+        <div class="slider-waarde"><span id="radius-val">30</span><small> km</small></div>
+      </div>
+      <input type="range" id="radius-slider" min="5" max="80" step="5" value="30"
+        oninput="updateSliders()">
+      <div class="slider-hint">Zoek laders binnen <span id="radius-hint">30</span> km van je route</div>
+    </div>
+
+    <!-- VERMOGEN VOORKEUR -->
+    <div class="vermogen-card">
+      <div class="vermogen-label">⚡ Minimaal vermogen</div>
+      <div class="vermogen-knoppen">
+        <button class="vermogen-knop actief" id="vk-100" onclick="setVermogen(100)">
+          100 kW+
+          <small>DC snelladen</small>
+        </button>
+        <button class="vermogen-knop" id="vk-50" onclick="setVermogen(50)">
+          50 kW+
+          <small>Standaard DC</small>
+        </button>
+        <button class="vermogen-knop" id="vk-any" onclick="setVermogen(0)" style="grid-column:span 2">
+          Alles tonen
+          <small>Ook AC laders</small>
+        </button>
+      </div>
+    </div>
+
+    <!-- START KNOP -->
+    <button id="start-btn" class="start-btn" onclick="startRijden()" disabled>
+      🚗 Begin de rit
+    </button>
+
+  </div><!-- /instellen-body -->
+</div><!-- /s-instellen -->
+
+
+<!-- ═══════════════════════════════════════ RIJDEN SCHERM -->
+<div id="s-rijden" class="scherm verborgen">
+  <div class="header" style="position:absolute;top:0;left:0;right:0;z-index:1000">
+    <button class="header-back" onclick="naarInstellen()">←</button>
+    <div style="flex:1">
+      <div style="font-size:15px;font-weight:700" id="rij-doel-naam">Bestemming</div>
+      <div class="header-sub" id="rij-doel-afstand">Route wordt berekend...</div>
+    </div>
+    <div id="gps-indicator" style="font-size:11px;color:var(--subtekst);text-align:right;line-height:1.3">
+      GPS<br><span id="gps-status">—</span>
+    </div>
+  </div>
+
+  <div id="kaart"></div>
+
+  <!-- HUD -->
+  <div class="hud" style="top:66px">
+    <div class="hud-kaart">
+      <div class="hud-rij">
+        <div class="hud-item" id="hud-bereik">
+          <div class="val groen" style="color:var(--groen)">—</div>
+          <div class="lbl">Bereik</div>
+        </div>
+        <div class="hud-divider"></div>
+        <div class="hud-item" id="hud-rest">
+          <div class="val">—</div>
+          <div class="lbl">Naar doel</div>
+        </div>
+        <div class="hud-divider"></div>
+        <div class="hud-item" id="hud-radius">
+          <div class="val" style="color:var(--accent)">—</div>
+          <div class="lbl">Zoekradius</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- STATUS -->
+  <div class="status-balk" style="top:130px">
+    <div class="status-pill">
+      <div class="status-dot groen" id="status-dot"></div>
+      <span id="status-tekst">Locatie bepalen...</span>
+    </div>
+  </div>
+
+  <!-- LADER CHIPS + KNOPPEN -->
+  <div class="onderste-balk">
+    <div class="laders-preview" id="laders-preview"></div>
+    <div class="acties-rij">
+      <button class="paniek-knop" onclick="paniekLader()">
+        ⚡ Dichtstbijzijnde lader
+      </button>
+      <button class="zoek-knop" onclick="zoekLaders(false)" title="Zoek langs route">🔍</button>
+      <button class="instellingen-knop" onclick="naarInstellen()" title="Instellingen">⚙️</button>
+    </div>
+  </div>
+
+</div><!-- /s-rijden -->
+
+
+<!-- ═══════════════════════════════════════ DETAIL PANEL -->
+<div id="overlay" onclick="sluitPanel()"></div>
+<div id="detail-panel">
+  <button class="panel-sluiten" onclick="sluitPanel()">✕</button>
+  <div class="panel-handle"></div>
+  <div class="panel-body" id="panel-body">
+    <!-- Dynamisch gevuld -->
+  </div>
+</div>
+
+
+<!-- ═══════════════════════════════════════ LADEN + TOAST -->
+<div class="laden" id="laden">
+  <div class="laden-ring"></div>
+  <div class="laden-tekst" id="laden-tekst">Even geduld...</div>
+</div>
+
+<div id="toast"></div>
+
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+const S = {
+  doel: null,           // { naam, adres, lat, lon }
+  bereik: 280,          // km
+  laadPct: 15,          // %
+  radius: 30,           // km
+  vermogen: 100,        // kW minimum
+  positie: null,        // { lat, lon }
+  route: null,          // GeoJSON LineString coördinaten
+  laders: [],           // gevonden laders
+  gekozenLader: null,
+};
+
+// API keys (publiek / gratis tiers)
+const OCM_KEY = 'b2f8a8e4-0fcc-440a-ae96-5b5a04fc8879'; // OpenChargeMap demo key
+const ORS_KEY = '5b3ce3597851110001cf62488e08c24c9f7c4e678b27c8c6b1aa38c1'; // ORS gratis
+
+let kaart = null;
+let gpsWatcher = null;
+let positieMarker = null;
+let routeLaag = null;
+let laderMarkers = [];
+let paniekMarker = null;
+
+// ═══════════════════════════════════════════
+// INSTELLEN SCHERM
+// ═══════════════════════════════════════════
+
+function updateSliders() {
+  const bereik = +document.getElementById('bereik-slider').value;
+  const laad = +document.getElementById('laad-slider').value;
+  const radius = +document.getElementById('radius-slider').value;
+  S.bereik = bereik;
+  S.laadPct = laad;
+  S.radius = radius;
+  document.getElementById('bereik-val').textContent = bereik;
+  document.getElementById('bereik-hint').textContent = bereik;
+  document.getElementById('laad-val').textContent = laad;
+  document.getElementById('laad-hint-km').textContent = Math.round(bereik * laad / 100);
+  document.getElementById('radius-val').textContent = radius;
+  document.getElementById('radius-hint').textContent = radius;
+  localStorage.setItem('ev_s', JSON.stringify({bereik, laad, radius, vermogen: S.vermogen}));
+}
+
+function setVermogen(kw) {
+  S.vermogen = kw;
+  document.querySelectorAll('.vermogen-knop').forEach(b => b.classList.remove('actief'));
+  const id = kw === 100 ? 'vk-100' : kw === 50 ? 'vk-50' : 'vk-any';
+  document.getElementById(id).classList.add('actief');
+  updateSliders();
+}
+
+function wisDoel() {
+  S.doel = null;
+  document.getElementById('doel-input').value = '';
+  document.getElementById('doel-badge').classList.remove('zichtbaar');
+  document.getElementById('doel-resultaten').classList.remove('zichtbaar');
+  document.getElementById('start-btn').disabled = true;
+}
+
+async function zoekBestemming() {
+  const q = document.getElementById('doel-input').value.trim();
+  if (!q) return;
+  toonLaden('Zoeken...');
+  try {
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=nl,be,de&addressdetails=1`);
+    const data = await r.json();
+    verbergLaden();
+    toonDoelResultaten(data);
+  } catch(e) {
+    verbergLaden();
+    toast('Zoeken mislukt, controleer verbinding');
+  }
+}
+
+function toonDoelResultaten(data) {
+  const el = document.getElementById('doel-resultaten');
+  if (!data.length) {
+    el.innerHTML = '<div class="doel-item"><span>Geen resultaten gevonden</span></div>';
+    el.classList.add('zichtbaar');
+    return;
+  }
+  el.innerHTML = data.map((d,i) => {
+    const naam = d.name || d.display_name.split(',')[0];
+    const rest = d.display_name.split(',').slice(1,3).join(',').trim();
+    return `<div class="doel-item" onclick="kiesDoel(${i})">
+      <strong>${naam}</strong>
+      <span>${rest}</span>
+    </div>`;
+  }).join('');
+  el.classList.add('zichtbaar');
+  el._data = data;
+}
+
+function kiesDoel(i) {
+  const data = document.getElementById('doel-resultaten')._data;
+  const d = data[i];
+  const naam = d.name || d.display_name.split(',')[0];
+  const adres = d.display_name.split(',').slice(1,3).join(',').trim();
+  S.doel = { naam, adres, lat: +d.lat, lon: +d.lon };
+  document.getElementById('doel-badge-naam').textContent = naam;
+  document.getElementById('doel-badge-adres').textContent = adres;
+  document.getElementById('doel-badge').classList.add('zichtbaar');
+  document.getElementById('doel-resultaten').classList.remove('zichtbaar');
+  document.getElementById('doel-input').value = '';
+  document.getElementById('start-btn').disabled = false;
+}
+
+document.getElementById('doel-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') zoekBestemming();
+});
+
+// Herstel opgeslagen instellingen
+(function herstelInstellingen() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('ev_s') || '{}');
+    if (saved.bereik) { S.bereik = saved.bereik; document.getElementById('bereik-slider').value = saved.bereik; }
+    if (saved.laad) { S.laadPct = saved.laad; document.getElementById('laad-slider').value = saved.laad; }
+    if (saved.radius) { S.radius = saved.radius; document.getElementById('radius-slider').value = saved.radius; }
+    if (saved.vermogen !== undefined) setVermogen(saved.vermogen);
+    updateSliders();
+  } catch(e) {}
+})();
+
+// ═══════════════════════════════════════════
+// NAVIGATIE TUSSEN SCHERMEN
+// ═══════════════════════════════════════════
+
+function startRijden() {
+  if (!S.doel) return;
+  document.getElementById('s-instellen').classList.add('verborgen');
+  document.getElementById('s-rijden').classList.remove('verborgen');
+  document.getElementById('rij-doel-naam').textContent = S.doel.naam;
+  initKaart();
+  startGPS();
+}
+
+function naarInstellen() {
+  document.getElementById('s-rijden').classList.add('verborgen');
+  document.getElementById('s-instellen').classList.remove('verborgen');
+  sluitPanel();
+}
+
+// ═══════════════════════════════════════════
+// KAART
+// ═══════════════════════════════════════════
+
+function initKaart() {
+  if (kaart) return; // al geïnitialiseerd
+  kaart = L.map('kaart', {
+    zoomControl: false,
+    attributionControl: false,
+  }).setView([52.1, 5.3], 8);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    maxZoom: 19,
+  }).addTo(kaart);
+
+  // Doel marker
+  L.marker([S.doel.lat, S.doel.lon], {
+    icon: L.divIcon({
+      className: '',
+      html: '<div style="font-size:28px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.6))">🏁</div>',
+      iconSize: [28, 28], iconAnchor: [14, 28]
+    })
+  }).addTo(kaart).bindPopup(S.doel.naam);
+}
+
+function updatePositieOpKaart(lat, lon) {
+  if (!kaart) return;
+  const icon = L.divIcon({
+    className: '',
+    html: '<div class="gps-dot"></div>',
+    iconSize: [16, 16], iconAnchor: [8, 8]
+  });
+  if (!positieMarker) {
+    positieMarker = L.marker([lat, lon], { icon, zIndexOffset: 1000 }).addTo(kaart);
+  } else {
+    positieMarker.setLatLng([lat, lon]);
+  }
+}
+
+function tekeRouteOpKaart(coords) {
+  if (!kaart) return;
+  if (routeLaag) kaart.removeLayer(routeLaag);
+  routeLaag = L.polyline(coords.map(c => [c[1], c[0]]), {
+    color: '#38bdf8', weight: 4, opacity: .6, dashArray: null
+  }).addTo(kaart);
+
+  const group = L.featureGroup([routeLaag]);
+  if (positieMarker) group.addLayer(positieMarker);
+  kaart.fitBounds(group.getBounds().pad(.12));
+}
+
+function plaatsLaderMarkers(laders) {
+  laderMarkers.forEach(m => kaart.removeLayer(m));
+  laderMarkers = [];
+  laders.forEach((l, i) => {
+    const cls = l.vermogen >= 100 ? 'kw100' : l.vermogen >= 50 ? 'kw50' : 'laag';
+    const icon = L.divIcon({
+      className: '',
+      html: `<div class="lader-marker ${cls}" onclick="toonDetail(${i})">⚡</div>`,
+      iconSize: [36, 36], iconAnchor: [18, 18]
+    });
+    const m = L.marker([l.lat, l.lon], { icon }).addTo(kaart);
+    laderMarkers.push(m);
+  });
+}
+
+// ═══════════════════════════════════════════
+// GPS
+// ═══════════════════════════════════════════
+
+function startGPS() {
+  if (!navigator.geolocation) {
+    // Demo mode: gebruik centrum NL
+    simuleerPositie(52.37, 4.9);
+    return;
+  }
+  setStatus('oranje', 'GPS zoeken...');
+  gpsWatcher = navigator.geolocation.watchPosition(
+    pos => {
+      const { latitude: lat, longitude: lon } = pos.coords;
+      S.positie = { lat, lon };
+      document.getElementById('gps-status').textContent = '✓';
+      updatePositieOpKaart(lat, lon);
+      berekenRoute();
+      updateHUD();
+      setStatus('groen', 'Live route actief');
+    },
+    err => {
+      setStatus('oranje', 'GPS niet beschikbaar — demo modus');
+      simuleerPositie(52.37, 4.9);
+    },
+    { enableHighAccuracy: true, maximumAge: 10000 }
+  );
+}
+
+function simuleerPositie(lat, lon) {
+  S.positie = { lat, lon };
+  updatePositieOpKaart(lat, lon);
+  berekenRoute();
+  updateHUD();
+  setStatus('groen', 'Demo positie (Amsterdam)');
+}
+
+// ═══════════════════════════════════════════
+// ROUTE BEREKENING
+// ═══════════════════════════════════════════
+
+let routeDebounce = null;
+function berekenRoute() {
+  if (!S.positie || !S.doel) return;
+  clearTimeout(routeDebounce);
+  routeDebounce = setTimeout(_berekenRoute, 3000); // niet te frequent
+}
+
+async function _berekenRoute() {
+  if (!S.positie || !S.doel) return;
+  try {
+    const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${ORS_KEY}&start=${S.positie.lon},${S.positie.lat}&end=${S.doel.lon},${S.doel.lat}`;
+    const r = await fetch(url);
+    const data = await r.json();
+    if (data.features && data.features[0]) {
+      const feat = data.features[0];
+      S.route = feat.geometry.coordinates;
+      const dist = feat.properties.segments[0].distance / 1000;
+      document.getElementById('rij-doel-afstand').textContent = `${Math.round(dist)} km naar ${S.doel.naam}`;
+      document.getElementById('hud-rest').querySelector('.val').textContent = `${Math.round(dist)} km`;
+      tekeRouteOpKaart(S.route);
+      updateStatusOBVBereik(dist);
+    }
+  } catch(e) {
+    // ORS bereikbaar? Fallback: toon rechte lijn
+    if (S.positie && S.doel) {
+      const dist = afstand(S.positie.lat, S.positie.lon, S.doel.lat, S.doel.lon);
+      document.getElementById('rij-doel-afstand').textContent = `~${Math.round(dist)} km (schatting)`;
+      document.getElementById('hud-rest').querySelector('.val').textContent = `~${Math.round(dist)} km`;
+      updateStatusOBVBereik(dist);
+    }
+  }
+}
+
+function updateStatusOBVBereik(restKm) {
+  const laadKm = S.bereik * S.laadPct / 100;
+  const haalbaar = S.bereik >= restKm;
+  const laadAdvies = !haalbaar || (S.bereik - restKm) < laadKm;
+  if (haalbaar && !laadAdvies) {
+    setStatus('groen', `Haalbaar ✓ — bereik ${S.bereik} km, ${Math.round(restKm)} km te gaan`);
+  } else if (!haalbaar) {
+    setStatus('rood', `Bereik tekort! Laden nodig — zoek laders`);
+    zoekLaders(false);
+  } else {
+    setStatus('oranje', `Laadadvies — plan een laadpauze`);
+  }
+}
+
+function updateHUD() {
+  const laadKm = Math.round(S.bereik * S.laadPct / 100);
+  const hud = document.getElementById('hud-bereik').querySelector('.val');
+  hud.textContent = `${S.bereik} km`;
+  if (S.bereik > laadKm * 3) hud.style.color = 'var(--groen)';
+  else if (S.bereik > laadKm) hud.style.color = 'var(--oranje)';
+  else hud.style.color = 'var(--rood)';
+  document.getElementById('hud-radius').querySelector('.val').textContent = `${S.radius} km`;
+}
+
+// ═══════════════════════════════════════════
+// LADERS ZOEKEN
+// ═══════════════════════════════════════════
+
+async function zoekLaders(paniek = false) {
+  if (!S.positie) { toast('Positie nog niet bekend'); return; }
+  toonLaden('Laders zoeken...');
+
+  const lat = S.positie.lat;
+  const lon = S.positie.lon;
+  const dist = paniek ? 30 : S.radius; // km
+  const kw = paniek ? 50 : S.vermogen;
+
+  try {
+    // OpenChargeMap
+    const ocmUrl = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=20&latitude=${lat}&longitude=${lon}&distance=${dist}&distanceunit=KM&minpowerkw=${kw}&connectiontypeid=33&key=${OCM_KEY}`;
+    const r = await fetch(ocmUrl);
+    const data = await r.json();
+
+    const laders = await Promise.all(data.map(async (d) => {
+      const naam = d.AddressInfo.Title;
+      const ladLat = d.AddressInfo.Latitude;
+      const ladLon = d.AddressInfo.Longitude;
+      const adres = [d.AddressInfo.AddressLine1, d.AddressInfo.Town].filter(Boolean).join(', ');
+      const nConnections = d.Connections ? d.Connections.length : 0;
+      const maxKw = d.Connections
+        ? Math.max(...d.Connections.map(c => c.PowerKW || 0))
+        : 0;
+      const operator = d.OperatorInfo ? d.OperatorInfo.Title : 'Onbekend';
+      const dist_km = afstand(lat, lon, ladLat, ladLon);
+
+      const faciliteiten = await zoekFaciliteiten(ladLat, ladLon);
+
+      return {
+        naam, lat: ladLat, lon: ladLon, adres,
+        aansluitingen: nConnections,
+        vermogen: maxKw,
+        operator,
+        afstand: dist_km,
+        faciliteiten,
+        id: d.ID,
+      };
+    }));
+
+    laders.sort((a, b) => a.afstand - b.afstand);
+    S.laders = laders;
+
+    verbergLaden();
+    toonLaderChips(laders);
+    plaatsLaderMarkers(laders);
+
+    if (paniek && laders.length > 0) {
+      toonDetail(0);
+    } else if (laders.length === 0) {
+      toast(`Geen laders gevonden binnen ${dist} km`);
+    } else {
+      toast(`${laders.length} laders gevonden`);
+    }
+  } catch(e) {
+    verbergLaden();
+    // Fallback: demo laders
+    const demoLaders = genereerDemoLaders(lat, lon);
+    S.laders = demoLaders;
+    toonLaderChips(demoLaders);
+    plaatsLaderMarkers(demoLaders);
+    toast('Demo data — API niet bereikbaar');
+  }
+}
+
+async function zoekFaciliteiten(lat, lon) {
+  try {
+    const query = `[out:json][timeout:10];
+(
+  node["amenity"="fast_food"](around:500,${lat},${lon});
+  node["amenity"="restaurant"](around:500,${lat},${lon});
+  node["amenity"="toilets"](around:500,${lat},${lon});
+  node["shop"="supermarket"](around:500,${lat},${lon});
+  node["shop"="convenience"](around:500,${lat},${lon});
+  node["amenity"="fuel"](around:500,${lat},${lon});
+);
+out body;`;
+    const r = await fetch('https://overpass-api.de/api/interpreter', {
+      method: 'POST',
+      body: 'data=' + encodeURIComponent(query)
+    });
+    const data = await r.json();
+    const facs = [];
+    for (const el of data.elements.slice(0, 8)) {
+      const naam = el.tags.name || el.tags.amenity || el.tags.shop || '';
+      const type = el.tags.amenity || el.tags.shop || '';
+      const dist_m = Math.round(afstand(lat, lon, el.lat, el.lon) * 1000);
+      const icon = facilityIcon(type, naam);
+      facs.push({ naam, type, dist_m, icon });
+    }
+    return facs;
+  } catch(e) {
+    return [];
+  }
+}
+
+function facilityIcon(type, naam) {
+  const n = naam.toLowerCase();
+  if (n.includes('mcdonald') || n.includes('burger') || n.includes('kfc')) return '🍔';
+  if (n.includes('aldi') || n.includes('lidl') || n.includes('jumbo') || n.includes('ah')) return '🛒';
+  if (type === 'toilets') return '🚽';
+  if (type === 'fast_food') return '🍟';
+  if (type === 'restaurant') return '🍽️';
+  if (type === 'fuel') return '⛽';
+  if (type === 'supermarket' || type === 'convenience') return '🛒';
+  return '📍';
+}
+
+// ═══════════════════════════════════════════
+// PANIEK KNOP
+// ═══════════════════════════════════════════
+
+function paniekLader() {
+  zoekLaders(true);
+}
+
+// ═══════════════════════════════════════════
+// LADER CHIPS TONEN
+// ═══════════════════════════════════════════
+
+function toonLaderChips(laders) {
+  const el = document.getElementById('laders-preview');
+  if (!laders.length) { el.innerHTML = ''; return; }
+
+  el.innerHTML = laders.slice(0, 6).map((l, i) => {
+    const kwCls = l.vermogen >= 100 ? '' : 'oranje';
+    const facs = l.faciliteiten.slice(0, 3).map(f => f.icon).join(' ');
+    return `<div class="lader-chip" onclick="toonDetail(${i})">
+      <div class="lader-chip-top">
+        <div class="lader-chip-naam">${l.operator.split(' ')[0]}</div>
+        <div class="lader-chip-kw ${kwCls}">${Math.round(l.vermogen)} kW</div>
+      </div>
+      <div class="lader-chip-info">🔌 ${l.aansluitingen} punt${l.aansluitingen !== 1 ? 'en' : ''} · ${l.afstand.toFixed(1)} km</div>
+      <div class="lader-chip-faciliteiten">${facs || '—'}</div>
+    </div>`;
+  }).join('');
+}
+
+// ═══════════════════════════════════════════
+// DETAIL PANEL
+// ═══════════════════════════════════════════
+
+function toonDetail(i) {
+  const l = S.laders[i];
+  if (!l) return;
+  S.gekozenLader = l;
+
+  const voordelen = bepaalVoordelen(l);
+  const nadelen = bepaalNadelen(l);
+
+  const facHtml = l.faciliteiten.length
+    ? l.faciliteiten.map(f =>
+        `<div class="faciliteit-rij">
+          <span class="faciliteit-icon">${f.icon}</span>
+          <span>${f.naam || f.type}</span>
+          <span class="faciliteit-afstand">${f.dist_m} m</span>
+        </div>`).join('')
+    : '<div style="font-size:13px;color:var(--subtekst);padding:6px 0">Geen faciliteiten gevonden in 500m</div>';
+
+  document.getElementById('panel-body').innerHTML = `
+    <div class="panel-naam">${l.naam}</div>
+    <div class="panel-adres">📍 ${l.adres}</div>
+
+    <div class="panel-badges">
+      <span class="badge ${l.vermogen >= 100 ? 'kw100' : 'kw50'}">⚡ ${Math.round(l.vermogen)} kW</span>
+      <span class="badge punten">🔌 ${l.aansluitingen} aansluitingen</span>
+      <span class="badge afstand">📏 ${l.afstand.toFixed(1)} km van je</span>
+    </div>
+
+    <div class="panel-sectie">
+      <div class="panel-sectie-titel">Operator</div>
+      <div style="font-size:14px">${l.operator}</div>
+    </div>
+
+    <div class="panel-sectie">
+      <div class="panel-sectie-titel">Faciliteiten in de buurt</div>
+      ${facHtml}
+    </div>
+
+    <div class="panel-sectie">
+      <div class="voor-nadeel-grid">
+        <div class="voordelen">
+          <div class="vn-titel">✅ Voordelen</div>
+          ${voordelen.map(v => `<div class="vn-item">• ${v}</div>`).join('')}
+        </div>
+        <div class="nadelen">
+          <div class="vn-titel">⚠️ Nadelen</div>
+          ${nadelen.map(n => `<div class="vn-item">• ${n}</div>`).join('')}
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-knoppen">
+      <button class="panel-btn navigeer" onclick="navigeerNaarLader()">🗺️ Navigeer</button>
+      <button class="panel-btn plugshare" onclick="openPlugshare()">📱 Live status</button>
+    </div>
+  `;
+
+  document.getElementById('overlay').classList.add('zichtbaar');
+  document.getElementById('detail-panel').classList.add('open');
+
+  // Kaart centreren
+  if (kaart) kaart.setView([l.lat, l.lon], 14);
+}
+
+function bepaalVoordelen(l) {
+  const v = [];
+  if (l.vermogen >= 150) v.push(`Snel laden: ${Math.round(l.vermogen)} kW`);
+  else if (l.vermogen >= 100) v.push('100 kW+ snelladen');
+  if (l.aansluitingen >= 8) v.push('Veel aansluitingen');
+  if (l.faciliteiten.some(f => f.type === 'fast_food' || f.naam?.toLowerCase().includes('mcdonald'))) v.push('Fast food aanwezig');
+  if (l.faciliteiten.some(f => f.type === 'toilets')) v.push('Toilet aanwezig');
+  if (l.faciliteiten.some(f => f.type === 'supermarket' || f.type === 'convenience')) v.push('Supermarkt nabij');
+  if (l.afstand < 1) v.push('Dicht bij jou');
+  if (!v.length) v.push('Op de route');
+  return v;
+}
+
+function bepaalNadelen(l) {
+  const n = [];
+  if (l.vermogen < 50) n.push('Laag vermogen (AC)');
+  else if (l.vermogen < 100) n.push('Max 50 kW');
+  if (l.aansluitingen <= 2) n.push('Weinig aansluitingen');
+  if (!l.faciliteiten.length) n.push('Geen faciliteiten nabij');
+  if (l.afstand > 10) n.push('Flinke omrijafstand');
+  if (!n.length) n.push('Geen bekende nadelen');
+  return n;
+}
+
+function sluitPanel() {
+  document.getElementById('overlay').classList.remove('zichtbaar');
+  document.getElementById('detail-panel').classList.remove('open');
+}
+
+function navigeerNaarLader() {
+  if (!S.gekozenLader) return;
+  const { lat, lon, naam } = S.gekozenLader;
+  const url = `https://www.google.com/maps/dir/?api=1&destination=${lat},${lon}&travelmode=driving`;
+  window.open(url, '_blank');
+}
+
+function openPlugshare() {
+  if (!S.gekozenLader) return;
+  const { lat, lon } = S.gekozenLader;
+  // PlugShare deeplink (werkt in app en browser)
+  const url = `https://api.plugshare.com/view/location?latitude=${lat}&longitude=${lon}`;
+  window.open(url, '_blank');
+}
+
+// ═══════════════════════════════════════════
+// HULPFUNCTIES
+// ═══════════════════════════════════════════
+
+function afstand(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+function setStatus(type, tekst) {
+  const dot = document.getElementById('status-dot');
+  dot.className = 'status-dot ' + type;
+  document.getElementById('status-tekst').textContent = tekst;
+}
+
+function toonLaden(tekst) {
+  document.getElementById('laden-tekst').textContent = tekst || 'Even geduld...';
+  document.getElementById('laden').classList.add('zichtbaar');
+}
+function verbergLaden() {
+  document.getElementById('laden').classList.remove('zichtbaar');
+}
+
+let toastTimer = null;
+function toast(tekst) {
+  const el = document.getElementById('toast');
+  el.textContent = tekst;
+  el.classList.add('zichtbaar');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('zichtbaar'), 2800);
+}
+
+// Demo laders als API niet beschikbaar is
+function genereerDemoLaders(lat, lon) {
+  const operators = ['Fastned', 'Allego', 'Ionity', 'Shell Recharge', 'Vattenfall'];
+  const namen = ['A1 Tankstation Maarssen', 'Parkeergarage Centrum', 'McDonalds Drive-in', 'IKEA Laadplein', 'Ziekenhuis Noord'];
+  return Array.from({length: 5}, (_, i) => ({
+    naam: namen[i],
+    operator: operators[i],
+    lat: lat + (Math.random() - .5) * .3,
+    lon: lon + (Math.random() - .5) * .5,
+    adres: `Voorbeeldstraat ${10 + i*5}, Demo`,
+    aansluitingen: [2, 4, 8, 12, 6][i],
+    vermogen: [150, 50, 100, 350, 50][i],
+    afstand: afstand(lat, lon, lat + (Math.random()-.5)*.3, lon + (Math.random()-.5)*.5),
+    faciliteiten: [
+      [{icon:'🍔',naam:'McDonald\'s',type:'fast_food',dist_m:80}],
+      [{icon:'🚽',naam:'Toiletten',type:'toilets',dist_m:30},{icon:'🛒',naam:'ALDI',type:'supermarket',dist_m:200}],
+      [{icon:'🍽️',naam:'Restaurant De Brug',type:'restaurant',dist_m:150}],
+      [{icon:'🛒',naam:'IKEA',type:'convenience',dist_m:50},{icon:'🍔',naam:'IKEA Restaurant',type:'restaurant',dist_m:60}],
+      [],
+    ][i],
+    id: 'demo_' + i,
+  })).sort((a,b) => a.afstand - b.afstand);
+}
+
+// ═══════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════
+updateSliders();
+</script>
+</body>
+</html>
