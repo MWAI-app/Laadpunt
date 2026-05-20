@@ -954,6 +954,8 @@ function updateHUD() {
 // LADERS ZOEKEN
 // ═══════════════════════════════════════════
 
+let zoekpuntMarker = null;
+
 async function zoekLaders(paniek = false) {
   if (!S.positie) { toast('Positie nog niet bekend'); return; }
   toonLaden('Laders zoeken...');
@@ -964,8 +966,20 @@ async function zoekLaders(paniek = false) {
   const kw = paniek ? 50 : S.vermogen;
 
   try {
-    // Bepaal zoekpunten: langs de route of alleen huidige positie
+    // Bepaal zoekpunten: op X km langs de route
     const zoekpunten = bepaalZoekpunten(paniek);
+    
+    // Toon zoekpunt op kaart
+    if (kaart && zoekpunten[0] && !paniek) {
+      if (zoekpuntMarker) kaart.removeLayer(zoekpuntMarker);
+      zoekpuntMarker = L.marker([zoekpunten[0].lat, zoekpunten[0].lon], {
+        icon: L.divIcon({
+          className: '',
+          html: `<div style="background:rgba(249,115,22,.9);border:3px solid white;border-radius:50%;width:20px;height:20px;box-shadow:0 0 0 4px rgba(249,115,22,.3)"></div>`,
+          iconSize: [20,20], iconAnchor: [10,10]
+        })
+      }).addTo(kaart).bindPopup(`🔍 Zoekpunt: ${S.laadKm || 60} km op route`);
+    }
     
     // Zoek laders bij elk punt, combineer en dedupliceer
     const alleResultaten = new Map();
@@ -1002,9 +1016,10 @@ async function zoekLaders(paniek = false) {
     if (paniek && laders.length > 0) {
       toonDetail(0);
     } else if (laders.length === 0) {
-      toast(`Geen laders gevonden — probeer grotere zoekradius`);
+      toast(`Geen laders gevonden — probeer grotere omrijdradius`);
     } else {
-      toast(`${laders.length} laders gevonden langs route`);
+      const km = S.laadKm || 60;
+      toast(`${laders.length} laders gevonden rond ${km} km op je route`);
     }
   } catch(e) {
     verbergLaden();
@@ -1017,24 +1032,40 @@ async function zoekLaders(paniek = false) {
 }
 
 function bepaalZoekpunten(paniek) {
-  // Als geen route bekend: alleen huidige positie
-  if (!S.route || S.route.length < 2 || paniek) {
+  // Paniek = zoek rondom huidige positie
+  if (paniek || !S.route || S.route.length < 2) {
     return [S.positie];
   }
-  
-  // Verdeel de route in segmenten en pak tussenpunten
-  const punten = [S.positie]; // begin bij huidige positie
-  const totaalPunten = S.route.length;
-  
-  // Pak max 4 tussenpunten langs de route (25%, 50%, 75%, doel)
-  const stappen = Math.min(4, Math.floor(totaalPunten / 4));
-  for (let i = 1; i <= stappen; i++) {
-    const idx = Math.floor((i / (stappen + 1)) * totaalPunten);
-    const coord = S.route[idx];
-    punten.push({ lat: coord[1], lon: coord[0] });
+
+  // Vind het punt op de route dat ~laadKm km verderop ligt
+  const doelAfstand = S.laadKm || 60; // km
+  let afstandGelopen = 0;
+  let zoekpunt = null;
+
+  for (let i = 0; i < S.route.length - 1; i++) {
+    const van = { lat: S.route[i][1], lon: S.route[i][0] };
+    const naar = { lat: S.route[i+1][1], lon: S.route[i+1][0] };
+    const stap = afstand(van.lat, van.lon, naar.lat, naar.lon);
+
+    if (afstandGelopen + stap >= doelAfstand) {
+      // Interpoleer het exacte punt
+      const fractie = (doelAfstand - afstandGelopen) / stap;
+      zoekpunt = {
+        lat: van.lat + fractie * (naar.lat - van.lat),
+        lon: van.lon + fractie * (naar.lon - van.lon),
+      };
+      break;
+    }
+    afstandGelopen += stap;
   }
-  
-  return punten;
+
+  // Als het punt niet gevonden (route korter dan laadKm): gebruik eindpunt
+  if (!zoekpunt) {
+    const last = S.route[S.route.length - 1];
+    zoekpunt = { lat: last[1], lon: last[0] };
+  }
+
+  return [zoekpunt];
 }
 
 async function zoekFaciliteiten(lat, lon) {
