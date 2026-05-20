@@ -500,26 +500,26 @@
       <div class="slider-hint">Je rijdt nog maximaal <span id="bereik-hint">280</span> km</div>
     </div>
 
-    <!-- LAADMOMENT SLIDER -->
+    <!-- LAADMOMENT SLIDER (in km) -->
     <div class="slider-card">
       <div class="slider-header">
-        <div class="slider-label">⚠️ Laden bij nog...</div>
-        <div class="slider-waarde"><span id="laad-val">15</span><small> %</small></div>
+        <div class="slider-label">⚠️ Laden binnen...</div>
+        <div class="slider-waarde"><span id="laad-val">60</span><small> km</small></div>
       </div>
-      <input type="range" id="laad-slider" min="5" max="40" step="5" value="15"
+      <input type="range" id="laad-slider" min="10" max="500" step="10" value="60"
         oninput="updateSliders()">
-      <div class="slider-hint">Laadadvies wanneer bereik &lt; <span id="laad-hint-km">42</span> km</div>
+      <div class="slider-hint">Geef laadadvies als bereik onder <span id="laad-hint-km">60</span> km komt</div>
     </div>
 
-    <!-- ZOEKRADIUS SLIDER -->
+    <!-- OMRIJDRADIUS SLIDER -->
     <div class="slider-card">
       <div class="slider-header">
-        <div class="slider-label">📡 Zoekradius</div>
+        <div class="slider-label">🔀 Omrijdradius</div>
         <div class="slider-waarde"><span id="radius-val">30</span><small> km</small></div>
       </div>
       <input type="range" id="radius-slider" min="5" max="80" step="5" value="30"
         oninput="updateSliders()">
-      <div class="slider-hint">Zoek laders binnen <span id="radius-hint">30</span> km van je route</div>
+      <div class="slider-hint">Zoek laders maximaal <span id="radius-hint">30</span> km van je route af</div>
     </div>
 
     <!-- VERMOGEN VOORKEUR -->
@@ -663,18 +663,25 @@ let paniekMarker = null;
 
 function updateSliders() {
   const bereik = +document.getElementById('bereik-slider').value;
-  const laad = +document.getElementById('laad-slider').value;
   const radius = +document.getElementById('radius-slider').value;
+  
+  // Laad-slider max = huidig bereik
+  const laadSlider = document.getElementById('laad-slider');
+  laadSlider.max = bereik;
+  let laadKm = +laadSlider.value;
+  if (laadKm > bereik) { laadKm = Math.round(bereik * 0.25); laadSlider.value = laadKm; }
+
   S.bereik = bereik;
-  S.laadPct = laad;
+  S.laadKm = laadKm;
   S.radius = radius;
+
   document.getElementById('bereik-val').textContent = bereik;
   document.getElementById('bereik-hint').textContent = bereik;
-  document.getElementById('laad-val').textContent = laad;
-  document.getElementById('laad-hint-km').textContent = Math.round(bereik * laad / 100);
+  document.getElementById('laad-val').textContent = laadKm;
+  document.getElementById('laad-hint-km').textContent = laadKm;
   document.getElementById('radius-val').textContent = radius;
   document.getElementById('radius-hint').textContent = radius;
-  localStorage.setItem('ev_s', JSON.stringify({bereik, laad, radius, vermogen: S.vermogen}));
+  localStorage.setItem('ev_s', JSON.stringify({bereik, laadKm, radius, vermogen: S.vermogen}));
 }
 
 function setVermogen(kw) {
@@ -698,7 +705,7 @@ async function zoekBestemming() {
   if (!q) return;
   toonLaden('Zoeken...');
   try {
-    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=5&countrycodes=nl,be,de&addressdetails=1`);
+    const r = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=8&addressdetails=1&featuretype=city&dedupe=1`);
     const data = await r.json();
     verbergLaden();
     toonDoelResultaten(data);
@@ -717,10 +724,13 @@ function toonDoelResultaten(data) {
   }
   el.innerHTML = data.map((d,i) => {
     const naam = d.name || d.display_name.split(',')[0];
-    const rest = d.display_name.split(',').slice(1,3).join(',').trim();
+    const delen = d.display_name.split(',');
+    const land = delen[delen.length - 1].trim();
+    const rest = delen.slice(1,3).join(',').trim();
+    const info = land !== naam ? `${rest} · ${land}` : rest;
     return `<div class="doel-item" onclick="kiesDoel(${i})">
       <strong>${naam}</strong>
-      <span>${rest}</span>
+      <span>${info}</span>
     </div>`;
   }).join('');
   el.classList.add('zichtbaar');
@@ -750,7 +760,7 @@ document.getElementById('doel-input').addEventListener('keydown', e => {
   try {
     const saved = JSON.parse(localStorage.getItem('ev_s') || '{}');
     if (saved.bereik) { S.bereik = saved.bereik; document.getElementById('bereik-slider').value = saved.bereik; }
-    if (saved.laad) { S.laadPct = saved.laad; document.getElementById('laad-slider').value = saved.laad; }
+    if (saved.laadKm) { S.laadKm = saved.laadKm; document.getElementById('laad-slider').value = saved.laadKm; }
     if (saved.radius) { S.radius = saved.radius; document.getElementById('radius-slider').value = saved.radius; }
     if (saved.vermogen !== undefined) setVermogen(saved.vermogen);
     updateSliders();
@@ -917,7 +927,7 @@ async function _berekenRoute() {
 }
 
 function updateStatusOBVBereik(restKm) {
-  const laadKm = S.bereik * S.laadPct / 100;
+  const laadKm = S.laadKm || 60;
   const haalbaar = S.bereik >= restKm;
   const laadAdvies = !haalbaar || (S.bereik - restKm) < laadKm;
   if (haalbaar && !laadAdvies) {
@@ -926,7 +936,7 @@ function updateStatusOBVBereik(restKm) {
     setStatus('rood', `Bereik tekort! Laden nodig — zoek laders`);
     zoekLaders(false);
   } else {
-    setStatus('oranje', `Laadadvies — plan een laadpauze`);
+    setStatus('oranje', `Laadadvies — minder dan ${laadKm} km bereik over na aankomst`);
   }
 }
 
@@ -950,38 +960,36 @@ async function zoekLaders(paniek = false) {
 
   const lat = S.positie.lat;
   const lon = S.positie.lon;
-  const dist = paniek ? 30 : S.radius; // km
+  const dist = paniek ? 30 : S.radius;
   const kw = paniek ? 50 : S.vermogen;
 
   try {
-    // OpenChargeMap
-    const ocmUrl = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=20&latitude=${lat}&longitude=${lon}&distance=${dist}&distanceunit=KM&minpowerkw=${kw}&connectiontypeid=33&key=${OCM_KEY}`;
-    const r = await fetch(ocmUrl);
-    const data = await r.json();
+    // Bepaal zoekpunten: langs de route of alleen huidige positie
+    const zoekpunten = bepaalZoekpunten(paniek);
+    
+    // Zoek laders bij elk punt, combineer en dedupliceer
+    const alleResultaten = new Map();
+    
+    for (const punt of zoekpunten) {
+      const ocmUrl = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=10&latitude=${punt.lat}&longitude=${punt.lon}&distance=${paniek ? 30 : Math.min(dist, 40)}&distanceunit=KM&minpowerkw=${kw}&connectiontypeid=33&key=${OCM_KEY}`;
+      const r = await fetch(ocmUrl);
+      const data = await r.json();
+      for (const d of data) {
+        if (!alleResultaten.has(d.ID)) alleResultaten.set(d.ID, d);
+      }
+    }
 
-    const laders = await Promise.all(data.map(async (d) => {
+    const laders = await Promise.all([...alleResultaten.values()].map(async (d) => {
       const naam = d.AddressInfo.Title;
       const ladLat = d.AddressInfo.Latitude;
       const ladLon = d.AddressInfo.Longitude;
       const adres = [d.AddressInfo.AddressLine1, d.AddressInfo.Town].filter(Boolean).join(', ');
       const nConnections = d.Connections ? d.Connections.length : 0;
-      const maxKw = d.Connections
-        ? Math.max(...d.Connections.map(c => c.PowerKW || 0))
-        : 0;
+      const maxKw = d.Connections ? Math.max(...d.Connections.map(c => c.PowerKW || 0)) : 0;
       const operator = d.OperatorInfo ? d.OperatorInfo.Title : 'Onbekend';
       const dist_km = afstand(lat, lon, ladLat, ladLon);
-
       const faciliteiten = await zoekFaciliteiten(ladLat, ladLon);
-
-      return {
-        naam, lat: ladLat, lon: ladLon, adres,
-        aansluitingen: nConnections,
-        vermogen: maxKw,
-        operator,
-        afstand: dist_km,
-        faciliteiten,
-        id: d.ID,
-      };
+      return { naam, lat: ladLat, lon: ladLon, adres, aansluitingen: nConnections, vermogen: maxKw, operator, afstand: dist_km, faciliteiten, id: d.ID };
     }));
 
     laders.sort((a, b) => a.afstand - b.afstand);
@@ -994,19 +1002,39 @@ async function zoekLaders(paniek = false) {
     if (paniek && laders.length > 0) {
       toonDetail(0);
     } else if (laders.length === 0) {
-      toast(`Geen laders gevonden binnen ${dist} km`);
+      toast(`Geen laders gevonden — probeer grotere zoekradius`);
     } else {
-      toast(`${laders.length} laders gevonden`);
+      toast(`${laders.length} laders gevonden langs route`);
     }
   } catch(e) {
     verbergLaden();
-    // Fallback: demo laders
     const demoLaders = genereerDemoLaders(lat, lon);
     S.laders = demoLaders;
     toonLaderChips(demoLaders);
     plaatsLaderMarkers(demoLaders);
     toast('Demo data — API niet bereikbaar');
   }
+}
+
+function bepaalZoekpunten(paniek) {
+  // Als geen route bekend: alleen huidige positie
+  if (!S.route || S.route.length < 2 || paniek) {
+    return [S.positie];
+  }
+  
+  // Verdeel de route in segmenten en pak tussenpunten
+  const punten = [S.positie]; // begin bij huidige positie
+  const totaalPunten = S.route.length;
+  
+  // Pak max 4 tussenpunten langs de route (25%, 50%, 75%, doel)
+  const stappen = Math.min(4, Math.floor(totaalPunten / 4));
+  for (let i = 1; i <= stappen; i++) {
+    const idx = Math.floor((i / (stappen + 1)) * totaalPunten);
+    const coord = S.route[idx];
+    punten.push({ lat: coord[1], lon: coord[0] });
+  }
+  
+  return punten;
 }
 
 async function zoekFaciliteiten(lat, lon) {
