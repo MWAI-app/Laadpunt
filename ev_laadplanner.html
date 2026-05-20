@@ -428,7 +428,42 @@
   }
   #toast.zichtbaar { opacity: 1; transform: translateX(-50%) translateY(0); }
 
-  /* ── LEAFLET OVERRIDES ── */
+  .laad-slider-balk {
+    background: rgba(15,23,42,.92);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,.1);
+    border-radius: 12px;
+    padding: 10px 12px 6px;
+    pointer-events: all;
+  }
+  .laad-slider-header {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; color: var(--subtekst);
+    margin-bottom: 6px;
+  }
+  .laad-slider-header strong { font-size: 20px; color: var(--accent); min-width: 36px; text-align:center; }
+  .zoek-nu-btn {
+    margin-left: auto;
+    background: var(--accent); border: none;
+    color: #0f172a; font-size: 13px; font-weight: 800;
+    padding: 5px 12px; border-radius: 8px; cursor: pointer;
+  }
+  .laad-slider-schaal {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: rgba(255,255,255,.25);
+    margin-top: 2px; padding: 0 2px;
+  }
+
+  /* ── CATEGORIE CHIPS ── */
+  .laders-categorie { flex-shrink: 0; }
+  .categorie-titel {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--subtekst); padding: 4px 2px 2px;
+  }
+  .lader-chip.eerder { border-color: rgba(148,163,184,.3); }
+  .lader-chip.opdoel { border-color: var(--groen); }
+  .lader-chip.later { border-color: rgba(56,189,248,.3); }
+  .lader-chip.omrijd { border-color: var(--oranje); }
   .leaflet-container { background: #1a2332 !important; }
   .lader-marker {
     display: flex; align-items: center; justify-content: center;
@@ -500,28 +535,6 @@
       <div class="slider-hint">Je rijdt nog maximaal <span id="bereik-hint">280</span> km</div>
     </div>
 
-    <!-- LAADMOMENT SLIDER (in km) -->
-    <div class="slider-card">
-      <div class="slider-header">
-        <div class="slider-label">⚠️ Laden binnen...</div>
-        <div class="slider-waarde"><span id="laad-val">60</span><small> km</small></div>
-      </div>
-      <input type="range" id="laad-slider" min="10" max="500" step="10" value="60"
-        oninput="updateSliders()">
-      <div class="slider-hint">Geef laadadvies als bereik onder <span id="laad-hint-km">60</span> km komt</div>
-    </div>
-
-    <!-- OMRIJDRADIUS SLIDER -->
-    <div class="slider-card">
-      <div class="slider-header">
-        <div class="slider-label">🔀 Omrijdradius</div>
-        <div class="slider-waarde"><span id="radius-val">30</span><small> km</small></div>
-      </div>
-      <input type="range" id="radius-slider" min="5" max="80" step="5" value="30"
-        oninput="updateSliders()">
-      <div class="slider-hint">Zoek laders maximaal <span id="radius-hint">30</span> km van je route af</div>
-    </div>
-
     <!-- VERMOGEN VOORKEUR -->
     <div class="vermogen-card">
       <div class="vermogen-label">⚡ Minimaal vermogen</div>
@@ -581,7 +594,7 @@
         <div class="hud-divider"></div>
         <div class="hud-item" id="hud-radius">
           <div class="val" style="color:var(--accent)">—</div>
-          <div class="lbl">Zoekradius</div>
+          <div class="lbl">Laden over</div>
         </div>
       </div>
     </div>
@@ -597,12 +610,26 @@
 
   <!-- LADER CHIPS + KNOPPEN -->
   <div class="onderste-balk">
+    <!-- Slider: laden over X km -->
+    <div class="laad-slider-balk">
+      <div class="laad-slider-header">
+        <span>⚡ Laden over</span>
+        <strong id="laad-over-val">70</strong>
+        <span>km</span>
+        <button class="zoek-nu-btn" onclick="zoekLaders(false)">Zoek →</button>
+      </div>
+      <input type="range" id="laad-over-slider" min="10" max="400" step="10" value="70"
+        oninput="updateLaadOver()">
+      <div class="laad-slider-schaal">
+        <span>10</span><span>100</span><span>200</span><span>300</span><span>400 km</span>
+      </div>
+    </div>
+
     <div class="laders-preview" id="laders-preview"></div>
     <div class="acties-rij">
       <button class="paniek-knop" onclick="paniekLader()">
         ⚡ Dichtstbijzijnde lader
       </button>
-      <button class="zoek-knop" onclick="zoekLaders(false)" title="Zoek langs route">🔍</button>
       <button class="instellingen-knop" onclick="naarInstellen()" title="Instellingen">⚙️</button>
     </div>
   </div>
@@ -663,25 +690,10 @@ let paniekMarker = null;
 
 function updateSliders() {
   const bereik = +document.getElementById('bereik-slider').value;
-  const radius = +document.getElementById('radius-slider').value;
-  
-  // Laad-slider max = huidig bereik
-  const laadSlider = document.getElementById('laad-slider');
-  laadSlider.max = bereik;
-  let laadKm = +laadSlider.value;
-  if (laadKm > bereik) { laadKm = Math.round(bereik * 0.25); laadSlider.value = laadKm; }
-
   S.bereik = bereik;
-  S.laadKm = laadKm;
-  S.radius = radius;
-
   document.getElementById('bereik-val').textContent = bereik;
   document.getElementById('bereik-hint').textContent = bereik;
-  document.getElementById('laad-val').textContent = laadKm;
-  document.getElementById('laad-hint-km').textContent = laadKm;
-  document.getElementById('radius-val').textContent = radius;
-  document.getElementById('radius-hint').textContent = radius;
-  localStorage.setItem('ev_s', JSON.stringify({bereik, laadKm, radius, vermogen: S.vermogen}));
+  localStorage.setItem('ev_s', JSON.stringify({bereik, vermogen: S.vermogen}));
 }
 
 function setVermogen(kw) {
@@ -760,8 +772,7 @@ document.getElementById('doel-input').addEventListener('keydown', e => {
   try {
     const saved = JSON.parse(localStorage.getItem('ev_s') || '{}');
     if (saved.bereik) { S.bereik = saved.bereik; document.getElementById('bereik-slider').value = saved.bereik; }
-    if (saved.laadKm) { S.laadKm = saved.laadKm; document.getElementById('laad-slider').value = saved.laadKm; }
-    if (saved.radius) { S.radius = saved.radius; document.getElementById('radius-slider').value = saved.radius; }
+    if (saved.vermogen !== undefined) setVermogen(saved.vermogen);
     if (saved.vermogen !== undefined) setVermogen(saved.vermogen);
     updateSliders();
   } catch(e) {}
@@ -837,7 +848,7 @@ function tekeRouteOpKaart(coords) {
   kaart.fitBounds(group.getBounds().pad(.12));
 }
 
-function plaatsLaderMarkers(laders) {
+function plaatsLaderMarkers(laders, zoekpunten) {
   laderMarkers.forEach(m => kaart.removeLayer(m));
   laderMarkers = [];
   laders.forEach((l, i) => {
@@ -894,14 +905,28 @@ function simuleerPositie(lat, lon) {
 // ═══════════════════════════════════════════
 
 let routeDebounce = null;
+let laatsteRoutePositie = null;
+
 function berekenRoute() {
   if (!S.positie || !S.doel) return;
+  
+  // Alleen herberekenen als 200m+ verplaatst sinds laatste berekening
+  if (laatsteRoutePositie) {
+    const verplaatst = afstand(
+      S.positie.lat, S.positie.lon,
+      laatsteRoutePositie.lat, laatsteRoutePositie.lon
+    ) * 1000; // meter
+    if (verplaatst < 200) return;
+  }
+  
   clearTimeout(routeDebounce);
-  routeDebounce = setTimeout(_berekenRoute, 500); // snel laden
+  laatsteRoutePositie = { ...S.positie }; // sla positie op vóór de berekening
+  routeDebounce = setTimeout(_berekenRoute, 500);
 }
 
 async function _berekenRoute() {
   if (!S.positie || !S.doel) return;
+  laatsteRoutePositie = { ...S.positie }; // onthoud positie van deze berekening
   try {
     // OSRM - open source, geen key nodig, betrouwbaar
     const url = `https://router.project-osrm.org/route/v1/driving/${S.positie.lon},${S.positie.lat};${S.doel.lon},${S.doel.lat}?overview=full&geometries=geojson`;
@@ -943,13 +968,13 @@ function updateStatusOBVBereik(restKm) {
 }
 
 function updateHUD() {
-  const laadKm = Math.round(S.bereik * S.laadPct / 100);
   const hud = document.getElementById('hud-bereik').querySelector('.val');
   hud.textContent = `${S.bereik} km`;
-  if (S.bereik > laadKm * 3) hud.style.color = 'var(--groen)';
+  const laadKm = S.laadKm || 70;
+  if (S.bereik > laadKm * 2) hud.style.color = 'var(--groen)';
   else if (S.bereik > laadKm) hud.style.color = 'var(--oranje)';
   else hud.style.color = 'var(--rood)';
-  document.getElementById('hud-radius').querySelector('.val').textContent = `${S.radius} km`;
+  document.getElementById('hud-radius').querySelector('.val').textContent = `${laadKm} km`;
 }
 
 // ═══════════════════════════════════════════
@@ -960,114 +985,153 @@ let zoekpuntMarker = null;
 
 async function zoekLaders(paniek = false) {
   if (!S.positie) { toast('Positie nog niet bekend'); return; }
-  toonLaden('Laders zoeken...');
+  toonLaden('Laders zoeken langs route...');
 
-  const lat = S.positie.lat;
-  const lon = S.positie.lon;
-  const dist = paniek ? 30 : S.radius;
   const kw = paniek ? 50 : S.vermogen;
 
   try {
-    // Bepaal zoekpunten: op X km langs de route
-    const zoekpunten = bepaalZoekpunten(paniek);
-    
+    if (paniek) {
+      // PANIEK: dichtstbijzijnde lader rondom huidige positie
+      const laders = await haalLadersOpPunt(S.positie, 30, kw, 5);
+      const metFac = await voegFaciliteitenToe(laders);
+      S.laders = metFac;
+      verbergLaden();
+      toonLaderChipsEnkel(metFac);
+      plaatsLaderMarkers(metFac, []);
+      if (metFac.length > 0) toonDetail(0);
+      else toast('Geen laders gevonden binnen 30 km');
+      return;
+    }
+
+    // NORMAAL: zoek in categorieën rond het gewenste laadpunt
+    const doelKm = S.laadKm || 70;
+    const omrijMax = 10; // km omrijden
+
+    // Bepaal 5 zoekpunten
+    const pVroeg1 = vindPuntOpRoute(Math.max(5, doelKm - 20));
+    const pVroeg2 = vindPuntOpRoute(Math.max(5, doelKm - 10));
+    const pDoel   = vindPuntOpRoute(doelKm);
+    const pLaat1  = vindPuntOpRoute(doelKm + 10);
+    const pLaat2  = vindPuntOpRoute(doelKm + 20);
+
     // Toon zoekpunt op kaart
-    if (kaart && zoekpunten[0] && !paniek) {
+    if (kaart && pDoel) {
       if (zoekpuntMarker) kaart.removeLayer(zoekpuntMarker);
-      zoekpuntMarker = L.marker([zoekpunten[0].lat, zoekpunten[0].lon], {
+      zoekpuntMarker = L.marker([pDoel.lat, pDoel.lon], {
         icon: L.divIcon({
           className: '',
-          html: `<div style="background:rgba(249,115,22,.9);border:3px solid white;border-radius:50%;width:20px;height:20px;box-shadow:0 0 0 4px rgba(249,115,22,.3)"></div>`,
-          iconSize: [20,20], iconAnchor: [10,10]
+          html: `<div style="background:rgba(249,115,22,.9);border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 0 0 5px rgba(249,115,22,.25)"></div>`,
+          iconSize: [18,18], iconAnchor: [9,9]
         })
-      }).addTo(kaart).bindPopup(`🔍 Zoekpunt: ${S.laadKm || 60} km op route`);
-    }
-    
-    // Zoek laders bij elk punt, combineer en dedupliceer
-    const alleResultaten = new Map();
-    
-    for (const punt of zoekpunten) {
-      const ocmUrl = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=10&latitude=${punt.lat}&longitude=${punt.lon}&distance=${paniek ? 30 : Math.min(dist, 40)}&distanceunit=KM&minpowerkw=${kw}&connectiontypeid=33&key=${OCM_KEY}`;
-      const r = await fetch(ocmUrl);
-      const data = await r.json();
-      for (const d of data) {
-        if (!alleResultaten.has(d.ID)) alleResultaten.set(d.ID, d);
-      }
+      }).addTo(kaart).bindPopup(`🎯 Laaddoel: ${doelKm} km`);
     }
 
-    const laders = await Promise.all([...alleResultaten.values()].map(async (d) => {
-      const naam = d.AddressInfo.Title;
-      const ladLat = d.AddressInfo.Latitude;
-      const ladLon = d.AddressInfo.Longitude;
-      const adres = [d.AddressInfo.AddressLine1, d.AddressInfo.Town].filter(Boolean).join(', ');
-      const nConnections = d.Connections ? d.Connections.length : 0;
-      const maxKw = d.Connections ? Math.max(...d.Connections.map(c => c.PowerKW || 0)) : 0;
-      const operator = d.OperatorInfo ? d.OperatorInfo.Title : 'Onbekend';
-      const dist_km = afstand(lat, lon, ladLat, ladLon);
-      const faciliteiten = await zoekFaciliteiten(ladLat, ladLon);
-      return { naam, lat: ladLat, lon: ladLon, adres, aansluitingen: nConnections, vermogen: maxKw, operator, afstand: dist_km, faciliteiten, id: d.ID };
-    }));
+    // Haal laders op per categorie, dedupliceer op ID
+    const [rVroeg1, rVroeg2, rDoel, rLaat1, rLaat2] = await Promise.all([
+      haalLadersOpPunt(pVroeg1, omrijMax + 5, kw, 4),
+      haalLadersOpPunt(pVroeg2, omrijMax + 5, kw, 4),
+      haalLadersOpPunt(pDoel,   omrijMax + 5, kw, 6),
+      haalLadersOpPunt(pLaat1,  omrijMax + 5, kw, 4),
+      haalLadersOpPunt(pLaat2,  omrijMax + 5, kw, 4),
+    ]);
 
-    laders.sort((a, b) => a.afstand - b.afstand);
-    S.laders = laders;
+    // Bouw categorieën, dedupliceer globaal op ID
+    const gezien = new Set();
+    function dedup(lijst, max) {
+      return lijst
+        .filter(l => { if (gezien.has(l.id)) return false; gezien.add(l.id); return true; })
+        .sort((a,b) => a.afstandVanPunt - b.afstandVanPunt)
+        .slice(0, max);
+    }
+
+    const catEerder = dedup([...rVroeg1, ...rVroeg2], 2);
+    const catDoel   = dedup(rDoel, 2);
+    const catLater  = dedup([...rLaat1, ...rLaat2], 2);
+    // Omrijders: op doelpunt maar verder van route dan 3km
+    const catOmrijd = dedup(
+      rDoel.filter(l => l.afstandVanPunt > 3 && l.afstandVanPunt <= omrijMax), 2
+    );
+
+    const alleLaders = [...catEerder, ...catDoel, ...catLater, ...catOmrijd];
+
+    // Faciliteiten ophalen voor alle unieke laders
+    const metFac = await voegFaciliteitenToe(alleLaders);
+
+    S.laders = metFac;
+    S.categorieen = {
+      eerder: catEerder.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
+      opdoel: catDoel.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
+      later:  catLater.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
+      omrijd: catOmrijd.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
+    };
 
     verbergLaden();
-    toonLaderChips(laders);
-    plaatsLaderMarkers(laders);
+    toonLaderChipsCategorie(S.categorieen, doelKm);
+    plaatsLaderMarkers(metFac, [pVroeg1, pVroeg2, pDoel, pLaat1, pLaat2].filter(Boolean));
 
-    if (paniek && laders.length > 0) {
-      toonDetail(0);
-    } else if (laders.length === 0) {
-      toast(`Geen laders gevonden — probeer grotere omrijdradius`);
-    } else {
-      const km = S.laadKm || 60;
-      toast(`${laders.length} laders gevonden rond ${km} km op je route`);
-    }
+    const totaal = metFac.length;
+    toast(totaal ? `${totaal} laders gevonden rond ${doelKm} km` : 'Geen laders gevonden — vergroot omrijdradius');
+
   } catch(e) {
     verbergLaden();
-    const demoLaders = genereerDemoLaders(lat, lon);
-    S.laders = demoLaders;
-    toonLaderChips(demoLaders);
-    plaatsLaderMarkers(demoLaders);
-    toast('Demo data — API niet bereikbaar');
+    toast('Fout bij zoeken — controleer verbinding');
+    console.error(e);
   }
 }
 
-function bepaalZoekpunten(paniek) {
-  // Paniek = zoek rondom huidige positie
-  if (paniek || !S.route || S.route.length < 2) {
-    return [S.positie];
-  }
+async function voegFaciliteitenToe(laders) {
+  return Promise.all(laders.map(async l => {
+    const fac = await zoekFaciliteiten(l.lat, l.lon);
+    return { ...l, faciliteiten: fac };
+  }));
+}
 
-  // Vind het punt op de route dat ~laadKm km verderop ligt
-  const doelAfstand = S.laadKm || 60; // km
-  let afstandGelopen = 0;
-  let zoekpunt = null;
+function updateLaadOver() {
+  const val = +document.getElementById('laad-over-slider').value;
+  S.laadKm = val;
+  document.getElementById('laad-over-val').textContent = val;
+  // Sync ook de HUD zoekradius display
+  document.getElementById('hud-radius').querySelector('.val').textContent = `${val} km`;
+}
 
+// Zoekpunt op route op exact X km afstand
+function vindPuntOpRoute(doelKm) {
+  if (!S.route || S.route.length < 2) return null;
+  let gelopen = 0;
   for (let i = 0; i < S.route.length - 1; i++) {
     const van = { lat: S.route[i][1], lon: S.route[i][0] };
     const naar = { lat: S.route[i+1][1], lon: S.route[i+1][0] };
     const stap = afstand(van.lat, van.lon, naar.lat, naar.lon);
-
-    if (afstandGelopen + stap >= doelAfstand) {
-      // Interpoleer het exacte punt
-      const fractie = (doelAfstand - afstandGelopen) / stap;
-      zoekpunt = {
-        lat: van.lat + fractie * (naar.lat - van.lat),
-        lon: van.lon + fractie * (naar.lon - van.lon),
-      };
-      break;
+    if (gelopen + stap >= doelKm) {
+      const f = (doelKm - gelopen) / stap;
+      return { lat: van.lat + f * (naar.lat - van.lat), lon: van.lon + f * (naar.lon - van.lon) };
     }
-    afstandGelopen += stap;
+    gelopen += stap;
   }
+  // Voorbij route: gebruik eindpunt
+  const last = S.route[S.route.length - 1];
+  return { lat: last[1], lon: last[0] };
+}
 
-  // Als het punt niet gevonden (route korter dan laadKm): gebruik eindpunt
-  if (!zoekpunt) {
-    const last = S.route[S.route.length - 1];
-    zoekpunt = { lat: last[1], lon: last[0] };
-  }
-
-  return [zoekpunt];
+async function haalLadersOpPunt(punt, maxKm, kw, maxAantal) {
+  if (!punt) return [];
+  try {
+    const url = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=${maxAantal}&latitude=${punt.lat}&longitude=${punt.lon}&distance=${maxKm}&distanceunit=KM&minpowerkw=${kw}&connectiontypeid=33&key=${OCM_KEY}`;
+    const r = await fetch(url);
+    const data = await r.json();
+    return data.map(d => ({
+      id: d.ID,
+      naam: d.AddressInfo.Title,
+      lat: d.AddressInfo.Latitude,
+      lon: d.AddressInfo.Longitude,
+      adres: [d.AddressInfo.AddressLine1, d.AddressInfo.Town].filter(Boolean).join(', '),
+      aansluitingen: d.Connections ? d.Connections.length : 0,
+      vermogen: d.Connections ? Math.max(...d.Connections.map(c => c.PowerKW || 0)) : 0,
+      operator: d.OperatorInfo ? d.OperatorInfo.Title : 'Onbekend',
+      afstandVanPunt: afstand(punt.lat, punt.lon, d.AddressInfo.Latitude, d.AddressInfo.Longitude),
+      afstandVanMij: afstand(S.positie.lat, S.positie.lon, d.AddressInfo.Latitude, d.AddressInfo.Longitude),
+    }));
+  } catch(e) { return []; }
 }
 
 async function zoekFaciliteiten(lat, lon) {
@@ -1125,19 +1189,52 @@ function paniekLader() {
 // LADER CHIPS TONEN
 // ═══════════════════════════════════════════
 
-function toonLaderChips(laders) {
+function toonLaderChipsCategorie(cats, doelKm) {
+  const el = document.getElementById('laders-preview');
+  if (!Object.values(cats).some(c => c.length)) { el.innerHTML = ''; return; }
+
+  const secties = [
+    { key: 'eerder', label: `↩ Iets eerder`, cls: 'eerder' },
+    { key: 'opdoel', label: `🎯 Op ${doelKm} km`, cls: 'opdoel' },
+    { key: 'later',  label: `↪ Iets later`,  cls: 'later' },
+    { key: 'omrijd', label: `🔀 Max 10 km omrijden`, cls: 'omrijd' },
+  ];
+
+  el.innerHTML = secties.map(s => {
+    const lijst = cats[s.key];
+    if (!lijst.length) return '';
+    const chips = lijst.map((l, i) => {
+      const idx = S.laders.indexOf(l);
+      const kwCls = l.vermogen >= 100 ? '' : 'oranje';
+      const facs = l.faciliteiten.slice(0,3).map(f => f.icon).join(' ');
+      return `<div class="lader-chip ${s.cls}" onclick="toonDetail(${idx})">
+        <div class="lader-chip-top">
+          <div class="lader-chip-naam">${l.operator.split(' ')[0]}</div>
+          <div class="lader-chip-kw ${kwCls}">${Math.round(l.vermogen)} kW</div>
+        </div>
+        <div class="lader-chip-info">🔌 ${l.aansluitingen} punten · ${l.afstandVanPunt.toFixed(1)} km van route</div>
+        <div class="lader-chip-faciliteiten">${facs || '—'}</div>
+      </div>`;
+    }).join('');
+    return `<div class="laders-categorie">
+      <div class="categorie-titel">${s.label}</div>
+      <div style="display:flex;gap:8px">${chips}</div>
+    </div>`;
+  }).join('');
+}
+
+function toonLaderChipsEnkel(laders) {
   const el = document.getElementById('laders-preview');
   if (!laders.length) { el.innerHTML = ''; return; }
-
-  el.innerHTML = laders.slice(0, 6).map((l, i) => {
+  el.innerHTML = laders.slice(0,5).map((l, i) => {
     const kwCls = l.vermogen >= 100 ? '' : 'oranje';
-    const facs = l.faciliteiten.slice(0, 3).map(f => f.icon).join(' ');
-    return `<div class="lader-chip" onclick="toonDetail(${i})">
+    const facs = (l.faciliteiten||[]).slice(0,3).map(f => f.icon).join(' ');
+    return `<div class="lader-chip opdoel" onclick="toonDetail(${i})">
       <div class="lader-chip-top">
         <div class="lader-chip-naam">${l.operator.split(' ')[0]}</div>
         <div class="lader-chip-kw ${kwCls}">${Math.round(l.vermogen)} kW</div>
       </div>
-      <div class="lader-chip-info">🔌 ${l.aansluitingen} punt${l.aansluitingen !== 1 ? 'en' : ''} · ${l.afstand.toFixed(1)} km</div>
+      <div class="lader-chip-info">🔌 ${l.aansluitingen} punten · ${l.afstandVanMij?.toFixed(1)||'?'} km</div>
       <div class="lader-chip-faciliteiten">${facs || '—'}</div>
     </div>`;
   }).join('');
