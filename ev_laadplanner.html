@@ -897,31 +897,34 @@ let routeDebounce = null;
 function berekenRoute() {
   if (!S.positie || !S.doel) return;
   clearTimeout(routeDebounce);
-  routeDebounce = setTimeout(_berekenRoute, 3000); // niet te frequent
+  routeDebounce = setTimeout(_berekenRoute, 500); // snel laden
 }
 
 async function _berekenRoute() {
   if (!S.positie || !S.doel) return;
   try {
-    const url = `https://api.openrouteservice.org/v2/directions/driving-car?api_key=${ORS_KEY}&start=${S.positie.lon},${S.positie.lat}&end=${S.doel.lon},${S.doel.lat}`;
+    // OSRM - open source, geen key nodig, betrouwbaar
+    const url = `https://router.project-osrm.org/route/v1/driving/${S.positie.lon},${S.positie.lat};${S.doel.lon},${S.doel.lat}?overview=full&geometries=geojson`;
     const r = await fetch(url);
     const data = await r.json();
-    if (data.features && data.features[0]) {
-      const feat = data.features[0];
-      S.route = feat.geometry.coordinates;
-      const dist = feat.properties.segments[0].distance / 1000;
+    if (data.routes && data.routes[0]) {
+      const route = data.routes[0];
+      S.route = route.geometry.coordinates;
+      const dist = route.distance / 1000;
       document.getElementById('rij-doel-afstand').textContent = `${Math.round(dist)} km naar ${S.doel.naam}`;
       document.getElementById('hud-rest').querySelector('.val').textContent = `${Math.round(dist)} km`;
       tekeRouteOpKaart(S.route);
       updateStatusOBVBereik(dist);
+      setStatus('groen', `Route geladen — ${Math.round(dist)} km naar ${S.doel.naam}`);
     }
   } catch(e) {
-    // ORS bereikbaar? Fallback: toon rechte lijn
+    // Fallback: rechte lijn schatting
     if (S.positie && S.doel) {
       const dist = afstand(S.positie.lat, S.positie.lon, S.doel.lat, S.doel.lon);
       document.getElementById('rij-doel-afstand').textContent = `~${Math.round(dist)} km (schatting)`;
       document.getElementById('hud-rest').querySelector('.val').textContent = `~${Math.round(dist)} km`;
       updateStatusOBVBereik(dist);
+      setStatus('oranje', `Route niet beschikbaar — schatting ${Math.round(dist)} km`);
     }
   }
 }
@@ -933,8 +936,7 @@ function updateStatusOBVBereik(restKm) {
   if (haalbaar && !laadAdvies) {
     setStatus('groen', `Haalbaar ✓ — bereik ${S.bereik} km, ${Math.round(restKm)} km te gaan`);
   } else if (!haalbaar) {
-    setStatus('rood', `Bereik tekort! Laden nodig — zoek laders`);
-    zoekLaders(false);
+    setStatus('rood', `Bereik tekort! Druk op 🔍 om laders te zoeken`);
   } else {
     setStatus('oranje', `Laadadvies — minder dan ${laadKm} km bereik over na aankomst`);
   }
