@@ -1251,8 +1251,13 @@ function toonDetail(i) {
 
   const voordelen = bepaalVoordelen(l);
   const nadelen = bepaalNadelen(l);
+  const afstandTekst = l.afstandVanMij != null
+    ? `${l.afstandVanMij.toFixed(1)} km van je`
+    : l.afstand != null
+      ? `${l.afstand.toFixed(1)} km van je`
+      : '';
 
-  const facHtml = l.faciliteiten.length
+  const facHtml = l.faciliteiten && l.faciliteiten.length
     ? l.faciliteiten.map(f =>
         `<div class="faciliteit-rij">
           <span class="faciliteit-icon">${f.icon}</span>
@@ -1268,7 +1273,7 @@ function toonDetail(i) {
     <div class="panel-badges">
       <span class="badge ${l.vermogen >= 100 ? 'kw100' : 'kw50'}">⚡ ${Math.round(l.vermogen)} kW</span>
       <span class="badge punten">🔌 ${l.aansluitingen} aansluitingen</span>
-      <span class="badge afstand">📏 ${l.afstand.toFixed(1)} km van je</span>
+      ${afstandTekst ? `<span class="badge afstand">📏 ${afstandTekst}</span>` : ''}
     </div>
 
     <div class="panel-sectie">
@@ -1303,30 +1308,31 @@ function toonDetail(i) {
   document.getElementById('overlay').classList.add('zichtbaar');
   document.getElementById('detail-panel').classList.add('open');
 
-  // Kaart centreren
   if (kaart) kaart.setView([l.lat, l.lon], 14);
 }
 
 function bepaalVoordelen(l) {
   const v = [];
+  const afst = l.afstandVanMij ?? l.afstand ?? 99;
   if (l.vermogen >= 150) v.push(`Snel laden: ${Math.round(l.vermogen)} kW`);
   else if (l.vermogen >= 100) v.push('100 kW+ snelladen');
   if (l.aansluitingen >= 8) v.push('Veel aansluitingen');
-  if (l.faciliteiten.some(f => f.type === 'fast_food' || f.naam?.toLowerCase().includes('mcdonald'))) v.push('Fast food aanwezig');
-  if (l.faciliteiten.some(f => f.type === 'toilets')) v.push('Toilet aanwezig');
-  if (l.faciliteiten.some(f => f.type === 'supermarket' || f.type === 'convenience')) v.push('Supermarkt nabij');
-  if (l.afstand < 1) v.push('Dicht bij jou');
+  if (l.faciliteiten?.some(f => f.type === 'fast_food' || f.naam?.toLowerCase().includes('mcdonald'))) v.push('Fast food aanwezig');
+  if (l.faciliteiten?.some(f => f.type === 'toilets')) v.push('Toilet aanwezig');
+  if (l.faciliteiten?.some(f => f.type === 'supermarket' || f.type === 'convenience')) v.push('Supermarkt nabij');
+  if (afst < 1) v.push('Dicht bij jou');
   if (!v.length) v.push('Op de route');
   return v;
 }
 
 function bepaalNadelen(l) {
   const n = [];
+  const afst = l.afstandVanMij ?? l.afstand ?? 0;
   if (l.vermogen < 50) n.push('Laag vermogen (AC)');
   else if (l.vermogen < 100) n.push('Max 50 kW');
   if (l.aansluitingen <= 2) n.push('Weinig aansluitingen');
-  if (!l.faciliteiten.length) n.push('Geen faciliteiten nabij');
-  if (l.afstand > 10) n.push('Flinke omrijafstand');
+  if (!l.faciliteiten?.length) n.push('Geen faciliteiten nabij');
+  if (afst > 10) n.push('Flinke omrijafstand');
   if (!n.length) n.push('Geen bekende nadelen');
   return n;
 }
