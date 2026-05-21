@@ -983,6 +983,24 @@ function updateHUD() {
 
 let zoekpuntMarker = null;
 
+// Punt op precies X km langs de route
+function vindPuntOpRoute(doelKm) {
+  if (!S.route || S.route.length < 2) return null;
+  let gelopen = 0;
+  for (let i = 0; i < S.route.length - 1; i++) {
+    const van = { lat: S.route[i][1], lon: S.route[i][0] };
+    const naar = { lat: S.route[i+1][1], lon: S.route[i+1][0] };
+    const stap = afstand(van.lat, van.lon, naar.lat, naar.lon);
+    if (gelopen + stap >= doelKm) {
+      const f = (doelKm - gelopen) / stap;
+      return { lat: van.lat + f*(naar.lat-van.lat), lon: van.lon + f*(naar.lon-van.lon) };
+    }
+    gelopen += stap;
+  }
+  const last = S.route[S.route.length-1];
+  return { lat: last[1], lon: last[0] };
+}
+
 async function zoekLaders(paniek = false) {
   if (!S.positie) { toast('Positie nog niet bekend'); return; }
   toonLaden('Laders zoeken langs route...');
@@ -991,9 +1009,8 @@ async function zoekLaders(paniek = false) {
 
   try {
     if (paniek) {
-      // PANIEK: dichtstbijzijnde lader rondom huidige positie
-      const laders = await haalLadersOpPunt(S.positie, 30, kw, 5);
-      const metFac = await voegFaciliteitenToe(laders);
+      const ruw = await haalLadersOpPunt(S.positie, 30, kw, 10);
+      const metFac = await voegFaciliteitenToe(ruw);
       S.laders = metFac;
       verbergLaden();
       toonLaderChipsEnkel(metFac);
@@ -1003,18 +1020,21 @@ async function zoekLaders(paniek = false) {
       return;
     }
 
-    // NORMAAL: zoek in categorieën rond het gewenste laadpunt
-    const doelKm = S.laadKm || 70;
-    const omrijMax = 10; // km omrijden
+    if (!S.route || S.route.length < 2) {
+      toast('Route nog niet berekend — even wachten');
+      verbergLaden();
+      return;
+    }
 
-    // Bepaal 5 zoekpunten
-    const pVroeg1 = vindPuntOpRoute(Math.max(5, doelKm - 20));
-    const pVroeg2 = vindPuntOpRoute(Math.max(5, doelKm - 10));
-    const pDoel   = vindPuntOpRoute(doelKm);
-    const pLaat1  = vindPuntOpRoute(doelKm + 10);
-    const pLaat2  = vindPuntOpRoute(doelKm + 20);
+    const doelKm = S.laadKm || 70;
+
+    // Bounding box: 60km voor t/m 30km na gevraagd punt
+    const kmVan = Math.max(0, doelKm - 60);
+    const kmTot = doelKm + 30;
+    const bb = boundingBox(kmVan, kmTot);
 
     // Toon zoekpunt op kaart
+    const pDoel = vindPuntOpRoute(doelKm);
     if (kaart && pDoel) {
       if (zoekpuntMarker) kaart.removeLayer(zoekpuntMarker);
       zoekpuntMarker = L.marker([pDoel.lat, pDoel.lon], {
@@ -1023,38 +1043,45 @@ async function zoekLaders(paniek = false) {
           html: `<div style="background:rgba(249,115,22,.9);border:3px solid white;border-radius:50%;width:18px;height:18px;box-shadow:0 0 0 5px rgba(249,115,22,.25)"></div>`,
           iconSize: [18,18], iconAnchor: [9,9]
         })
-      }).addTo(kaart).bindPopup(`🎯 Laaddoel: ${doelKm} km`);
+      }).addTo(kaart).bindPopup(`🎯 Laden over ${doelKm} km`);
     }
 
-    // Haal laders op per categorie, dedupliceer op ID
-    const [rVroeg1, rVroeg2, rDoel, rLaat1, rLaat2] = await Promise.all([
-      haalLadersOpPunt(pVroeg1, omrijMax + 5, kw, 4),
-      haalLadersOpPunt(pVroeg2, omrijMax + 5, kw, 4),
-      haalLadersOpPunt(pDoel,   omrijMax + 5, kw, 6),
-      haalLadersOpPunt(pLaat1,  omrijMax + 5, kw, 4),
-      haalLadersOpPunt(pLaat2,  omrijMax + 5, kw, 4),
-    ]);
+    // Haal alle laders in de box op (max 60)
+    toonLaden(`Laders ophalen in zoekzone...`);
+    const ruweLaders = await haalLadersViaBoundingBox(bb, kw, 60);
 
-    // Bouw categorieën, dedupliceer globaal op ID
+    // Filter: echt langs de route + goede rijrichting, met fallback
+    toonLaden(`Filteren op route...`);
+    const gofilterd = filterMetFallback(ruweLaders);
+
+    if (!gofilterd.length) {
+      verbergLaden();
+      toast('Geen laders langs route gevonden');
+      return;
+    }
+
+    // Bereken afstand tot doelpunt voor categorisering
+    const metDoelAfstand = gofilterd.map(l => ({
+      ...l,
+      afstandVanPunt: afstandTotRoute(l.lat, l.lon).km,
+      kmOpRoute: berekenKmOpRoute(l.lat, l.lon),
+    }));
+
+    // Categoriseer op km-positie langs de route
+    const eerder = metDoelAfstand.filter(l => l.kmOpRoute < doelKm - 5).sort((a,b) => b.kmOpRoute - a.kmOpRoute).slice(0,2);
+    const opdoel  = metDoelAfstand.filter(l => l.kmOpRoute >= doelKm - 5 && l.kmOpRoute <= doelKm + 10).sort((a,b) => Math.abs(a.kmOpRoute-doelKm) - Math.abs(b.kmOpRoute-doelKm)).slice(0,2);
+    const later   = metDoelAfstand.filter(l => l.kmOpRoute > doelKm + 10).sort((a,b) => a.kmOpRoute - b.kmOpRoute).slice(0,2);
+
+    // Dedupliceer
     const gezien = new Set();
-    function dedup(lijst, max) {
-      return lijst
-        .filter(l => { if (gezien.has(l.id)) return false; gezien.add(l.id); return true; })
-        .sort((a,b) => a.afstandVanPunt - b.afstandVanPunt)
-        .slice(0, max);
+    function dedup(lijst) {
+      return lijst.filter(l => { if(gezien.has(l.id)) return false; gezien.add(l.id); return true; });
     }
+    const catEerder = dedup(eerder);
+    const catDoel   = dedup(opdoel);
+    const catLater  = dedup(later);
 
-    const catEerder = dedup([...rVroeg1, ...rVroeg2], 2);
-    const catDoel   = dedup(rDoel, 2);
-    const catLater  = dedup([...rLaat1, ...rLaat2], 2);
-    // Omrijders: op doelpunt maar verder van route dan 3km
-    const catOmrijd = dedup(
-      rDoel.filter(l => l.afstandVanPunt > 3 && l.afstandVanPunt <= omrijMax), 2
-    );
-
-    const alleLaders = [...catEerder, ...catDoel, ...catLater, ...catOmrijd];
-
-    // Faciliteiten ophalen voor alle unieke laders
+    const alleLaders = [...catEerder, ...catDoel, ...catLater];
     const metFac = await voegFaciliteitenToe(alleLaders);
 
     S.laders = metFac;
@@ -1062,21 +1089,35 @@ async function zoekLaders(paniek = false) {
       eerder: catEerder.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
       opdoel: catDoel.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
       later:  catLater.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
-      omrijd: catOmrijd.map(l => metFac.find(m => m.id === l.id)).filter(Boolean),
+      omrijd: [],
     };
 
     verbergLaden();
     toonLaderChipsCategorie(S.categorieen, doelKm);
-    plaatsLaderMarkers(metFac, [pVroeg1, pVroeg2, pDoel, pLaat1, pLaat2].filter(Boolean));
+    plaatsLaderMarkers(metFac, []);
 
-    const totaal = metFac.length;
-    toast(totaal ? `${totaal} laders gevonden rond ${doelKm} km` : 'Geen laders gevonden — vergroot omrijdradius');
+    toast(`${metFac.length} laders langs route gevonden`);
 
   } catch(e) {
     verbergLaden();
     toast('Fout bij zoeken — controleer verbinding');
     console.error(e);
   }
+}
+
+// Bereken op hoeveel km langs de route een station ligt
+function berekenKmOpRoute(lat, lon) {
+  if (!S.route || S.route.length < 2) return 0;
+  let gelopen = 0, minKm = Infinity, kmBijMin = 0;
+  for (let i = 0; i < S.route.length - 1; i++) {
+    const van = { lat: S.route[i][1], lon: S.route[i][0] };
+    const naar = { lat: S.route[i+1][1], lon: S.route[i+1][0] };
+    const stap = afstand(van.lat, van.lon, naar.lat, naar.lon);
+    const km = afstandPuntTotSegment(lat, lon, van.lat, van.lon, naar.lat, naar.lon);
+    if (km < minKm) { minKm = km; kmBijMin = gelopen + stap / 2; }
+    gelopen += stap;
+  }
+  return kmBijMin;
 }
 
 async function voegFaciliteitenToe(laders) {
@@ -1094,23 +1135,140 @@ function updateLaadOver() {
   document.getElementById('hud-radius').querySelector('.val').textContent = `${val} km`;
 }
 
-// Zoekpunt op route op exact X km afstand
-function vindPuntOpRoute(doelKm) {
-  if (!S.route || S.route.length < 2) return null;
+// ═══════════════════════════════════════════
+// GEOMETRIE HULPFUNCTIES
+// ═══════════════════════════════════════════
+
+// Exacte afstand van punt (lat,lon) tot lijnstuk (A→B) in km
+function afstandPuntTotSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
+  const dx = bLon - aLon, dy = bLat - aLat;
+  const lenSq = dx*dx + dy*dy;
+  if (lenSq === 0) return afstand(pLat, pLon, aLat, aLon);
+  let t = ((pLon - aLon)*dx + (pLat - aLat)*dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return afstand(pLat, pLon, aLat + t*dy, aLon + t*dx);
+}
+
+// Minimale afstand van punt tot de volledige routelijn + index dichtstbijzijnde segment
+function afstandTotRoute(lat, lon) {
+  if (!S.route || S.route.length < 2) return { km: 999, segIdx: 0 };
+  let minKm = Infinity, minIdx = 0;
+  for (let i = 0; i < S.route.length - 1; i++) {
+    const km = afstandPuntTotSegment(
+      lat, lon,
+      S.route[i][1], S.route[i][0],
+      S.route[i+1][1], S.route[i+1][0]
+    );
+    if (km < minKm) { minKm = km; minIdx = i; }
+  }
+  return { km: minKm, segIdx: minIdx };
+}
+
+// Rijrichting op segment i (graden, 0=noord, 90=oost)
+function rijrichting(segIdx) {
+  const i = Math.min(segIdx, S.route.length - 2);
+  const dLon = S.route[i+1][0] - S.route[i][0];
+  const dLat = S.route[i+1][1] - S.route[i][1];
+  return Math.atan2(dLon, dLat) * 180 / Math.PI; // graden
+}
+
+// Hoek van station tov routepunt
+function hoekNaarStation(segIdx, sLat, sLon) {
+  const rLat = S.route[segIdx][1], rLon = S.route[segIdx][0];
+  const dLon = sLon - rLon, dLat = sLat - rLat;
+  return Math.atan2(dLon, dLat) * 180 / Math.PI;
+}
+
+// Zit station aan de goede kant? 
+// Op snelwegen rijdt verkeer aan de rechterkant van de rijrichting.
+// Stations aan de linker kant (>90° afwijking) zijn voor tegengesteld verkeer.
+function goedekant(segIdx, sLat, sLon) {
+  const rit = rijrichting(segIdx);
+  const naar = hoekNaarStation(segIdx, sLat, sLon);
+  let diff = naar - rit;
+  // Normaliseer naar -180..180
+  while (diff > 180) diff -= 360;
+  while (diff < -180) diff += 360;
+  // Rechts = positief (0..180), links = negatief
+  // Station wordt weggegooid als het duidelijk links ligt (diff < -30°)
+  // en ver genoeg om relevant te zijn (we checken dit alleen bij >0.3km)
+  return diff > -30; // rechts of recht voor/achter = goed
+}
+
+// Bounding box over routesegment van kmVan tot kmTot
+function boundingBox(kmVan, kmTot) {
+  const punten = [];
   let gelopen = 0;
   for (let i = 0; i < S.route.length - 1; i++) {
     const van = { lat: S.route[i][1], lon: S.route[i][0] };
     const naar = { lat: S.route[i+1][1], lon: S.route[i+1][0] };
     const stap = afstand(van.lat, van.lon, naar.lat, naar.lon);
-    if (gelopen + stap >= doelKm) {
-      const f = (doelKm - gelopen) / stap;
-      return { lat: van.lat + f * (naar.lat - van.lat), lon: van.lon + f * (naar.lon - van.lon) };
+    if (gelopen + stap >= kmVan && gelopen <= kmTot) {
+      punten.push(van, naar);
     }
     gelopen += stap;
+    if (gelopen > kmTot + 10) break;
   }
-  // Voorbij route: gebruik eindpunt
-  const last = S.route[S.route.length - 1];
-  return { lat: last[1], lon: last[0] };
+  if (!punten.length) return null;
+  const lats = punten.map(p => p.lat);
+  const lons = punten.map(p => p.lon);
+  return {
+    minLat: Math.min(...lats), maxLat: Math.max(...lats),
+    minLon: Math.min(...lons), maxLon: Math.max(...lons),
+  };
+}
+
+// ═══════════════════════════════════════════
+// NIEUWE ZOEKLOGICA MET BOUNDING BOX
+// ═══════════════════════════════════════════
+
+async function haalLadersViaBoundingBox(bb, kw, maxAantal) {
+  if (!bb) return [];
+  // Voeg 0.15° padding toe (~15km) aan de box
+  const pad = 0.15;
+  const url = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=${maxAantal}`
+    + `&boundingbox=(${bb.minLat-pad},${bb.minLon-pad}),(${bb.maxLat+pad},${bb.maxLon+pad})`
+    + `&minpowerkw=${kw}&key=${OCM_KEY}`;
+  const r = await fetch(url);
+  const data = await r.json();
+  if (!Array.isArray(data)) return [];
+  return data.map(d => ({
+    id: d.ID,
+    naam: d.AddressInfo.Title,
+    lat: d.AddressInfo.Latitude,
+    lon: d.AddressInfo.Longitude,
+    adres: [d.AddressInfo.AddressLine1, d.AddressInfo.Town].filter(Boolean).join(', '),
+    aansluitingen: d.Connections ? d.Connections.length : 0,
+    vermogen: d.Connections ? Math.max(...d.Connections.map(c => c.PowerKW || 0)) : 0,
+    operator: d.OperatorInfo ? d.OperatorInfo.Title : 'Onbekend',
+    afstandVanMij: afstand(S.positie.lat, S.positie.lon, d.AddressInfo.Latitude, d.AddressInfo.Longitude),
+  }));
+}
+
+function filterOpRoute(laders, maxKm) {
+  return laders
+    .map(l => {
+      const { km, segIdx } = afstandTotRoute(l.lat, l.lon);
+      return { ...l, afstandVanRoute: km, segIdx };
+    })
+    .filter(l => {
+      if (l.afstandVanRoute > maxKm) return false;
+      // Rijrichtingcheck: alleen toepassen als station verder dan 300m van route
+      if (l.afstandVanRoute > 0.3 && !goedekant(l.segIdx, l.lat, l.lon)) return false;
+      return true;
+    });
+}
+
+function filterMetFallback(laders) {
+  // Probeer 1km, dan 2km, dan 5km
+  for (const maxKm of [1, 2, 5]) {
+    const resultaat = filterOpRoute(laders, maxKm);
+    if (resultaat.length > 0) {
+      if (maxKm > 1) toast(`Binnen ${maxKm} km van route gevonden`);
+      return resultaat;
+    }
+  }
+  return [];
 }
 
 async function haalLadersOpPunt(punt, maxKm, kw, maxAantal) {
