@@ -1116,7 +1116,7 @@ function vindPuntOpRoute(doelKm) {
 async function haalLadersOpPunt(punt, maxKm, kw, maxAantal) {
   if (!punt) return [];
   try {
-    const url = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=${maxAantal}&latitude=${punt.lat}&longitude=${punt.lon}&distance=${maxKm}&distanceunit=KM&minpowerkw=${kw}&connectiontypeid=33&key=${OCM_KEY}`;
+    const url = `https://api.openchargemap.io/v3/poi/?output=json&maxresults=${maxAantal}&latitude=${punt.lat}&longitude=${punt.lon}&distance=${maxKm}&distanceunit=KM&minpowerkw=${kw}&key=${OCM_KEY}`;
     const r = await fetch(url);
     const data = await r.json();
     return data.map(d => ({
@@ -1352,8 +1352,8 @@ function navigeerNaarLader() {
 function openPlugshare() {
   if (!S.gekozenLader) return;
   const { lat, lon } = S.gekozenLader;
-  // PlugShare deeplink (werkt in app en browser)
-  const url = `https://api.plugshare.com/view/location?latitude=${lat}&longitude=${lon}`;
+  // PlugShare website met coordinaten - werkt altijd in browser
+  const url = `https://www.plugshare.com/location/${lat},${lon}`;
   window.open(url, '_blank');
 }
 
